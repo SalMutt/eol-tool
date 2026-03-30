@@ -12,7 +12,6 @@ from eol_tool import __version__
 from .manufacturer_corrections import apply_manufacturer_corrections
 from .models import EOLResult, EOLStatus, HardwareModel, RiskCategory
 from .reader import read_models, write_results
-from .registry import get_checker, get_checkers
 from .registry import list_checkers as _list_checkers
 
 # Checkers that have a refresh_cache classmethod, keyed by source name
@@ -30,136 +29,62 @@ def cli():
     """EOL Tool - Check end-of-life status for hardware models."""
 
 
-async def _safe_check_batch(
-    checker, models: list[HardwareModel],
-) -> list[EOLResult]:
-    """Delegate to checker.check_batch which handles per-model error catching."""
-    return await checker.check_batch(models)
-
-
-async def _run_check(
-    models: list[HardwareModel],
-    by_mfr: dict[str, list[HardwareModel]],
+async def _run_with_progress(
+    models_to_check: list[HardwareModel],
     concurrency: int,
     no_cache: bool,
     skip_fallback: bool,
 ) -> list[EOLResult]:
-    """Run all applicable checkers for grouped models and return best results."""
+    """Run check pipeline with CLI progress output."""
     from .cache import ResultCache
-    from .check_pipeline import select_best_result
+    from .check_pipeline import run_check_pipeline
 
     cache_inst = ResultCache() if not no_cache else None
-    all_results: list[EOLResult] = []
 
     try:
+        by_mfr: dict[str, list[HardwareModel]] = {}
+        for m in models_to_check:
+            by_mfr.setdefault(m.manufacturer, []).append(m)
+
         for mfr_name, mfr_models in sorted(by_mfr.items()):
-            # Try to load cached results first
-            to_check: list[HardwareModel] = []
             if cache_inst:
+                cached_count = 0
                 for m in mfr_models:
-                    cached = await cache_inst.get(m.model, m.manufacturer)
-                    if cached:
-                        cached.model = m
-                        all_results.append(cached)
-                    else:
-                        to_check.append(m)
-                if len(to_check) < len(mfr_models):
-                    cached_count = len(mfr_models) - len(to_check)
-                    click.echo(f"  {mfr_name}: {cached_count} cached, {len(to_check)} to check")
+                    if await cache_inst.get(m.model, m.manufacturer):
+                        cached_count += 1
+                to_check = len(mfr_models) - cached_count
+                if cached_count:
+                    click.echo(
+                        f"  {mfr_name}: {cached_count} cached, {to_check} to check"
+                    )
+                if to_check:
+                    click.echo(f"Checking {mfr_name}: {to_check} models...")
             else:
-                to_check = mfr_models
+                click.echo(f"Checking {mfr_name}: {len(mfr_models)} models...")
 
-            if not to_check:
-                continue
+        results = await run_check_pipeline(
+            models_to_check,
+            concurrency=concurrency,
+            use_cache=not no_cache,
+            skip_fallback=skip_fallback,
+            cache=cache_inst,
+        )
 
-            # Identify ALL applicable checkers
-            checker_classes = []
-            manual_cls = get_checker("__manual__")
-            vendor_classes = get_checkers(mfr_name)
-            techgen_cls = get_checker("__techgen__")
-            fallback_cls = None if skip_fallback else get_checker("__fallback__")
-
-            if manual_cls:
-                checker_classes.append(manual_cls)
-            checker_classes.extend(vendor_classes)
-            if techgen_cls:
-                checker_classes.append(techgen_cls)
-            if fallback_cls:
-                checker_classes.append(fallback_cls)
-
-            if not checker_classes:
-                for m in to_check:
-                    all_results.append(
-                        EOLResult(
-                            model=m,
-                            status=EOLStatus.UNKNOWN,
-                            checked_at=datetime.now(),
-                            source_name="",
-                            notes="no-checker-available",
-                        )
-                    )
-                click.echo(
-                    f"Checking {mfr_name}: {len(to_check)} models... skipped (no checker)"
-                )
-                continue
-
-            click.echo(f"Checking {mfr_name}: {len(to_check)} models...")
-
-            # Run ALL checkers and collect results per model
-            per_model_results: list[list[EOLResult]] = [[] for _ in to_check]
-
-            for checker_cls in checker_classes:
-                try:
-                    checker = checker_cls()
-                    checker._semaphore = asyncio.Semaphore(concurrency)
-                    async with checker:
-                        checker_results = await _safe_check_batch(checker, to_check)
-                    for i, r in enumerate(checker_results):
-                        r.checker_priority = checker_cls.priority
-                        per_model_results[i].append(r)
-                except Exception as exc:
-                    logger.warning("Checker %s failed: %s", checker_cls.__name__, exc)
-
-            # Select best result for each model
-            batch_results = []
-            for i, m in enumerate(to_check):
-                results = per_model_results[i]
-                if results:
-                    batch_results.append(select_best_result(results))
-                else:
-                    batch_results.append(
-                        EOLResult(
-                            model=m,
-                            status=EOLStatus.UNKNOWN,
-                            checked_at=datetime.now(),
-                            source_name="",
-                            notes="all-checkers-failed",
-                        )
-                    )
-
-            # Store results in cache
-            if cache_inst:
-                for r in batch_results:
-                    await cache_inst.set(r)
-
-            all_results.extend(batch_results)
-
-            # Print batch summary
-            counts: dict[str, int] = {}
-            for r in batch_results:
-                counts[r.status.value] = counts.get(r.status.value, 0) + 1
-            parts = [
-                f"{counts.get(s, 0)} {s}"
-                for s in ["eol", "active", "unknown"]
-                if counts.get(s, 0)
-            ]
+        counts: dict[str, int] = {}
+        for r in results:
+            counts[r.status.value] = counts.get(r.status.value, 0) + 1
+        parts = [
+            f"{counts.get(s, 0)} {s}"
+            for s in ["eol", "active", "unknown"]
+            if counts.get(s, 0)
+        ]
+        if parts:
             click.echo(f"  Done: {', '.join(parts)}")
 
+        return results
     finally:
         if cache_inst:
             await cache_inst.close()
-
-    return all_results
 
 
 @cli.command()
@@ -196,7 +121,9 @@ def check(input_path, output_path, manufacturer, concurrency, dry_run, no_cache,
         if manufacturer not in by_mfr:
             click.echo(f"No models found for manufacturer: {manufacturer}")
             return
-        by_mfr = {manufacturer: by_mfr[manufacturer]}
+        models_to_check = by_mfr[manufacturer]
+    else:
+        models_to_check = models
 
     checkers = _list_checkers()
     if not checkers:
@@ -205,7 +132,7 @@ def check(input_path, output_path, manufacturer, concurrency, dry_run, no_cache,
 
     click.echo("")
     results = asyncio.run(
-        _run_check(models, by_mfr, concurrency, no_cache, skip_fallback)
+        _run_with_progress(models_to_check, concurrency, no_cache, skip_fallback)
     )
 
     if output_path:

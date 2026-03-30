@@ -603,7 +603,7 @@ class TestCheckerPriority:
         ])
 
         with (
-            patch("eol_tool.cli.get_checker") as mock_get,
+            patch("eol_tool.check_pipeline.get_checker") as mock_get,
             patch("eol_tool.cli._list_checkers") as mock_list,
         ):
             mock_list.return_value = {
@@ -653,7 +653,7 @@ class TestCheckerPriority:
         self._write_xlsx(xlsx, [("HMT42GR7AFR4A", "SK Hynix", "memory")])
 
         with (
-            patch("eol_tool.cli.get_checker") as mock_get,
+            patch("eol_tool.check_pipeline.get_checker") as mock_get,
             patch("eol_tool.cli._list_checkers") as mock_list,
         ):
             mock_list.return_value = {

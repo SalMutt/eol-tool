@@ -93,7 +93,7 @@ class TestCheckCommandProducesOutput:
         output = tmp_path / "output.xlsx"
 
         with (
-            patch("eol_tool.cli.get_checker") as mock_get,
+            patch("eol_tool.check_pipeline.get_checker") as mock_get,
             patch("eol_tool.cli._list_checkers") as mock_list,
         ):
             mock_list.return_value = {"__fallback__": FakeChecker}
@@ -125,7 +125,7 @@ class TestCheckCommandProducesOutput:
         output = tmp_path / "output.xlsx"
 
         with (
-            patch("eol_tool.cli.get_checker") as mock_get,
+            patch("eol_tool.check_pipeline.get_checker") as mock_get,
             patch("eol_tool.cli._list_checkers") as mock_list,
         ):
             mock_list.return_value = {"__fallback__": FakeChecker}
@@ -174,7 +174,7 @@ class TestCacheIntegration:
                 return await original_check(self, model)
 
         with (
-            patch("eol_tool.cli.get_checker") as mock_get,
+            patch("eol_tool.check_pipeline.get_checker") as mock_get,
             patch("eol_tool.cli._list_checkers") as mock_list,
             patch("eol_tool.cache._DEFAULT_DB", db_path),
         ):
@@ -216,7 +216,7 @@ class TestCacheIntegration:
                 return await original_check(self, model)
 
         with (
-            patch("eol_tool.cli.get_checker") as mock_get,
+            patch("eol_tool.check_pipeline.get_checker") as mock_get,
             patch("eol_tool.cli._list_checkers") as mock_list,
             patch("eol_tool.cache._DEFAULT_DB", db_path),
         ):
@@ -254,7 +254,7 @@ class TestExceptionHandling:
         output = tmp_path / "output.xlsx"
 
         with (
-            patch("eol_tool.cli.get_checker") as mock_get,
+            patch("eol_tool.check_pipeline.get_checker") as mock_get,
             patch("eol_tool.cli._list_checkers") as mock_list,
         ):
             mock_list.return_value = {"__fallback__": ErrorChecker}
@@ -281,7 +281,7 @@ class TestExceptionHandling:
         output = tmp_path / "output.xlsx"
 
         with (
-            patch("eol_tool.cli.get_checker") as mock_get,
+            patch("eol_tool.check_pipeline.get_checker") as mock_get,
             patch("eol_tool.cli._list_checkers") as mock_list,
         ):
             mock_list.return_value = {"__fallback__": InitErrorChecker}
@@ -314,7 +314,7 @@ class TestSummaryOutput:
         output = tmp_path / "output.xlsx"
 
         with (
-            patch("eol_tool.cli.get_checker") as mock_get,
+            patch("eol_tool.check_pipeline.get_checker") as mock_get,
             patch("eol_tool.cli._list_checkers") as mock_list,
         ):
             mock_list.return_value = {"__fallback__": FakeChecker}
@@ -336,7 +336,7 @@ class TestSummaryOutput:
         output = tmp_path / "output.xlsx"
 
         with (
-            patch("eol_tool.cli.get_checker") as mock_get,
+            patch("eol_tool.check_pipeline.get_checker") as mock_get,
             patch("eol_tool.cli._list_checkers") as mock_list,
         ):
             mock_list.return_value = {"__fallback__": FakeChecker}

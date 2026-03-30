@@ -1,10 +1,13 @@
 """Check pipeline for selecting the best EOL result from multiple checkers."""
 
+import asyncio
 import logging
 from datetime import datetime
 
+from .cache import ResultCache
 from .checker import BaseChecker
 from .models import EOLResult, EOLStatus, HardwareModel
+from .registry import get_checker, get_checkers
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +67,119 @@ def select_best_result(results: list[EOLResult]) -> EOLResult:
         winner.source_name, winner.checker_priority, winner.confidence,
     )
     return winner
+
+
+async def run_check_pipeline(
+    models: list[HardwareModel],
+    concurrency: int = 5,
+    use_cache: bool = True,
+    skip_fallback: bool = False,
+    cache: ResultCache | None = None,
+) -> list[EOLResult]:
+    """Run all applicable checkers on a list of models and return best results.
+
+    Groups models by manufacturer, builds the checker chain for each group,
+    runs all checkers, and selects the best result per model.
+    """
+    by_mfr: dict[str, list[HardwareModel]] = {}
+    for m in models:
+        by_mfr.setdefault(m.manufacturer, []).append(m)
+
+    own_cache = False
+    cache_inst = cache
+    if use_cache and cache_inst is None:
+        cache_inst = ResultCache()
+        own_cache = True
+    elif not use_cache:
+        cache_inst = None
+
+    all_results: list[EOLResult] = []
+
+    try:
+        for mfr_name, mfr_models in sorted(by_mfr.items()):
+            to_check: list[HardwareModel] = []
+            if cache_inst:
+                for m in mfr_models:
+                    cached_result = await cache_inst.get(m.model, m.manufacturer)
+                    if cached_result:
+                        cached_result.model = m
+                        all_results.append(cached_result)
+                    else:
+                        to_check.append(m)
+            else:
+                to_check = mfr_models
+
+            if not to_check:
+                continue
+
+            checker_classes = []
+            manual_cls = get_checker("__manual__")
+            vendor_classes = get_checkers(mfr_name)
+            techgen_cls = get_checker("__techgen__")
+            fallback_cls = None if skip_fallback else get_checker("__fallback__")
+
+            if manual_cls:
+                checker_classes.append(manual_cls)
+            checker_classes.extend(vendor_classes)
+            if techgen_cls:
+                checker_classes.append(techgen_cls)
+            if fallback_cls:
+                checker_classes.append(fallback_cls)
+
+            if not checker_classes:
+                for m in to_check:
+                    all_results.append(
+                        EOLResult(
+                            model=m,
+                            status=EOLStatus.UNKNOWN,
+                            checked_at=datetime.now(),
+                            source_name="",
+                            notes="no-checker-available",
+                        )
+                    )
+                continue
+
+            per_model_results: list[list[EOLResult]] = [[] for _ in to_check]
+
+            for checker_cls in checker_classes:
+                try:
+                    checker = checker_cls()
+                    checker._semaphore = asyncio.Semaphore(concurrency)
+                    async with checker:
+                        checker_results = await checker.check_batch(to_check)
+                    for i, r in enumerate(checker_results):
+                        r.checker_priority = checker_cls.priority
+                        per_model_results[i].append(r)
+                except Exception as exc:
+                    logger.warning("Checker %s failed: %s", checker_cls.__name__, exc)
+
+            batch_results = []
+            for i, m in enumerate(to_check):
+                candidates = per_model_results[i]
+                if candidates:
+                    batch_results.append(select_best_result(candidates))
+                else:
+                    batch_results.append(
+                        EOLResult(
+                            model=m,
+                            status=EOLStatus.UNKNOWN,
+                            checked_at=datetime.now(),
+                            source_name="",
+                            notes="all-checkers-failed",
+                        )
+                    )
+
+            if cache_inst:
+                for r in batch_results:
+                    await cache_inst.set(r)
+
+            all_results.extend(batch_results)
+
+    finally:
+        if own_cache and cache_inst:
+            await cache_inst.close()
+
+    return all_results
 
 
 async def run_all_checkers(

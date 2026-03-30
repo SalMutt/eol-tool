@@ -1,6 +1,5 @@
 """FastAPI application wrapping eol-tool functionality."""
 
-import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -13,12 +12,12 @@ from fastapi.staticfiles import StaticFiles
 from eol_tool import __version__
 
 from .cache import ResultCache
-from .check_pipeline import select_best_result
+from .check_pipeline import run_check_pipeline
 from .manufacturer_corrections import apply_manufacturer_corrections
-from .models import EOLResult, EOLStatus, HardwareModel
+from .models import EOLResult, HardwareModel
 from .normalizer import normalize_model
 from .reader import read_models
-from .registry import get_checker, get_checkers, list_checkers
+from .registry import list_checkers
 
 logger = logging.getLogger(__name__)
 
@@ -100,97 +99,6 @@ def _infer_manufacturer(model_str: str) -> str:
     return ""
 
 
-async def _run_check_pipeline(
-    models: list[HardwareModel],
-    concurrency: int = 5,
-) -> list[EOLResult]:
-    """Run the full check pipeline on a list of models. Reuses CLI logic."""
-    apply_manufacturer_corrections(models)
-
-    by_mfr: dict[str, list[HardwareModel]] = {}
-    for m in models:
-        by_mfr.setdefault(m.manufacturer, []).append(m)
-
-    cache_inst = ResultCache()
-    all_results: list[EOLResult] = []
-
-    try:
-        for mfr_name, mfr_models in sorted(by_mfr.items()):
-            to_check: list[HardwareModel] = []
-            for m in mfr_models:
-                cached = await cache_inst.get(m.model, m.manufacturer)
-                if cached:
-                    cached.model = m
-                    all_results.append(cached)
-                else:
-                    to_check.append(m)
-
-            if not to_check:
-                continue
-
-            checker_classes = []
-            manual_cls = get_checker("__manual__")
-            vendor_classes = get_checkers(mfr_name)
-            techgen_cls = get_checker("__techgen__")
-            fallback_cls = get_checker("__fallback__")
-
-            if manual_cls:
-                checker_classes.append(manual_cls)
-            checker_classes.extend(vendor_classes)
-            if techgen_cls:
-                checker_classes.append(techgen_cls)
-            if fallback_cls:
-                checker_classes.append(fallback_cls)
-
-            if not checker_classes:
-                for m in to_check:
-                    all_results.append(
-                        EOLResult(
-                            model=m,
-                            status=EOLStatus.UNKNOWN,
-                            checked_at=datetime.now(),
-                            source_name="",
-                            notes="no-checker-available",
-                        )
-                    )
-                continue
-
-            per_model_results: list[list[EOLResult]] = [[] for _ in to_check]
-
-            for checker_cls in checker_classes:
-                try:
-                    checker = checker_cls()
-                    checker._semaphore = asyncio.Semaphore(concurrency)
-                    async with checker:
-                        checker_results = await checker.check_batch(to_check)
-                    for i, r in enumerate(checker_results):
-                        r.checker_priority = checker_cls.priority
-                        per_model_results[i].append(r)
-                except Exception as exc:
-                    logger.warning("Checker %s failed: %s", checker_cls.__name__, exc)
-
-            for i, m in enumerate(to_check):
-                results = per_model_results[i]
-                if results:
-                    best = select_best_result(results)
-                    await cache_inst.set(best)
-                    all_results.append(best)
-                else:
-                    all_results.append(
-                        EOLResult(
-                            model=m,
-                            status=EOLStatus.UNKNOWN,
-                            checked_at=datetime.now(),
-                            source_name="",
-                            notes="all-checkers-failed",
-                        )
-                    )
-    finally:
-        await cache_inst.close()
-
-    return all_results
-
-
 @app.get("/api/health")
 async def health():
     """Health check endpoint."""
@@ -214,7 +122,8 @@ async def lookup(
         original_item=model,
     )
 
-    results = await _run_check_pipeline([hw])
+    apply_manufacturer_corrections([hw])
+    results = await run_check_pipeline([hw])
     if not results:
         return {"model": model, "status": "not_found", "date_source": "none"}
 
@@ -233,7 +142,8 @@ async def check_upload(file: UploadFile = File(...)):
 
     try:
         models = read_models(tmp_path)
-        results = await _run_check_pipeline(models)
+        apply_manufacturer_corrections(models)
+        results = await run_check_pipeline(models)
     finally:
         tmp_path.unlink(missing_ok=True)
 
