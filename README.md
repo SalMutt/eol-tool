@@ -17,9 +17,20 @@ CLI tool and web dashboard for checking datacenter hardware end-of-life status. 
 
 ## Quick Start
 
-### Docker (recommended)
+### Docker Hub (easiest)
 
 ```bash
+docker pull salmutt/eol-tool:latest
+docker run -d -p 8080:8080 --name eol-tool salmutt/eol-tool:latest
+```
+
+Open http://localhost:8080
+
+### Docker Compose (from source)
+
+```bash
+git clone https://github.com/SalMutt/eol-tool.git
+cd eol-tool
 docker compose up -d
 ```
 
