@@ -1,0 +1,30 @@
+[
+  {
+    "cycle": "23.4",
+    "releaseDate": "2023-12-15",
+    "eol": "2027-01-15",
+    "support": "2026-01-15",
+    "lts": true
+  },
+  {
+    "cycle": "23.2",
+    "releaseDate": "2023-06-15",
+    "eol": "2024-12-15",
+    "support": "2024-06-15",
+    "lts": false
+  },
+  {
+    "cycle": "21.4",
+    "releaseDate": "2021-12-15",
+    "eol": "2025-01-15",
+    "support": "2024-01-15",
+    "lts": true
+  },
+  {
+    "cycle": "18.4",
+    "releaseDate": "2018-12-15",
+    "eol": "2022-06-15",
+    "support": "2021-06-15",
+    "lts": true
+  }
+]

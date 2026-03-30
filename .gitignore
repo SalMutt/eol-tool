@@ -1,0 +1,16 @@
+__pycache__/
+frontend/__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+.eggs/
+.ruff_cache/
+.pytest_cache/
+*.so
+.claude/
+*.xlsx
+!data/*.xlsx
+PHASE_COMPLETE.md
+.env

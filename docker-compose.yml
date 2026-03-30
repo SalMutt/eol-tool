@@ -1,0 +1,15 @@
+services:
+  eol-tool:
+    container_name: eol-tool
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - eol-cache:/root/.cache/eol-tool
+    restart: unless-stopped
+    environment:
+      - EOL_TOOL_CACHE_DIR=/root/.cache/eol-tool
+
+volumes:
+  eol-cache:

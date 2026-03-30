@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EOL Hardware Checker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #08080b; color: #e4e4e7; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: #111114; }
+  ::-webkit-scrollbar-thumb { background: #2a2a32; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a3a42; }
+  select, input { outline: none; }
+  select option { background: #111114; color: #a1a1aa; }
+  table { border-spacing: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const e = React.createElement;
+const { useState, useMemo, useCallback, useRef } = React;
+var API_BASE = window.location.origin;
+
+const STATUS_CONFIG = {
+  eol: { label: "EOL", bg: "#2d1215", border: "#6b2128", text: "#ef4444", dot: "#ef4444" },
+  active: { label: "Active", bg: "#0d2818", border: "#1a5632", text: "#22c55e", dot: "#22c55e" },
+  unknown: { label: "Unknown", bg: "#1e1b16", border: "#4a3f2f", text: "#ca8a04", dot: "#ca8a04" },
+  not_found: { label: "Not Found", bg: "#1a1a1e", border: "#3a3a42", text: "#71717a", dot: "#71717a" },
+  eol_announced: { label: "EOL Soon", bg: "#2d1c0a", border: "#6b4012", text: "#f97316", dot: "#f97316" },
+};
+
+const RISK_CONFIG = {
+  security: { label: "Security", color: "#ef4444", bg: "#2d1215" },
+  support: { label: "Support", color: "#f97316", bg: "#2d1c0a" },
+  procurement: { label: "Procurement", color: "#3b82f6", bg: "#0c1929" },
+  informational: { label: "Info", color: "#71717a", bg: "#1a1a1e" },
+  none: { label: "—", color: "#3a3a42", bg: "transparent" },
+};
+
+const mono = "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace";
+
+function StatusBadge({ status }) {
+  const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.unknown;
+  return e("span", {
+    style: {
+      display: "inline-flex", alignItems: "center", gap: 6,
+      padding: "3px 10px", borderRadius: 4,
+      background: cfg.bg, border: "1px solid " + cfg.border,
+      color: cfg.text, fontSize: 12, fontWeight: 600,
+      fontFamily: mono, letterSpacing: "0.03em", textTransform: "uppercase",
+    }
+  },
+    e("span", { style: { width: 6, height: 6, borderRadius: "50%", background: cfg.dot, flexShrink: 0 } }),
+    cfg.label
+  );
+}
+
+function RiskBadge({ risk }) {
+  const cfg = RISK_CONFIG[risk] || RISK_CONFIG.none;
+  if (risk === "none" || !risk) return e("span", { style: { color: "#3a3a42", fontSize: 12 } }, "—");
+  return e("span", {
+    style: {
+      padding: "2px 8px", borderRadius: 3,
+      background: cfg.bg, color: cfg.color,
+      fontSize: 11, fontWeight: 600,
+      fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.04em",
+    }
+  }, cfg.label);
+}
+
+function StatCard({ label, value, color, total }) {
+  const pct = total > 0 ? ((value / total) * 100).toFixed(1) : "0.0";
+  return e("div", {
+    style: {
+      background: "#111114", border: "1px solid #1e1e24",
+      borderRadius: 6, padding: "16px 20px", minWidth: 140, flex: 1,
+    }
+  },
+    e("div", { style: { fontSize: 11, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, fontFamily: mono } }, label),
+    e("div", { style: { display: "flex", alignItems: "baseline", gap: 8 } },
+      e("span", { style: { fontSize: 28, fontWeight: 700, color, fontFamily: mono } }, value),
+      e("span", { style: { fontSize: 13, color: "#52525b" } }, pct + "%"),
+    ),
+    e("div", { style: { marginTop: 8, height: 3, background: "#1e1e24", borderRadius: 2, overflow: "hidden" } },
+      e("div", { style: { height: "100%", width: pct + "%", background: color, borderRadius: 2, transition: "width 0.6s ease" } }),
+    ),
+  );
+}
+
+function DateSourceBadge({ dateSource }) {
+  if (dateSource === "manufacturer_confirmed") {
+    return e("span", { style: { padding: "1px 6px", borderRadius: 3, background: "#0d2818", color: "#22c55e", fontSize: 9, fontWeight: 600, fontFamily: mono, textTransform: "uppercase" } }, "Mfr");
+  }
+  if (dateSource === "community_database") {
+    return e("span", { style: { padding: "1px 6px", borderRadius: 3, background: "#0c1929", color: "#3b82f6", fontSize: 9, fontWeight: 600, fontFamily: mono, textTransform: "uppercase" } }, "Community");
+  }
+  return e("span", { style: { color: "#3a3a42", fontSize: 12 } }, "—");
+}
+
+function ModelTable({ models }) {
+  const headers = ["Model", "Category", "Status", "Risk", "EOL Reason", "EOL Date", "Date Source", "Confidence", "Notes"];
+  return e("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
+    e("thead", null,
+      e("tr", { style: { background: "#0a0a0d" } },
+        headers.map(function(h) {
+          return e("th", {
+            key: h,
+            style: {
+              padding: "8px 12px", textAlign: "left", color: "#52525b",
+              fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em",
+              fontFamily: mono, fontWeight: 600, borderBottom: "1px solid #1e1e24",
+            }
+          }, h);
+        })
+      )
+    ),
+    e("tbody", null,
+      models.map(function(m, i) {
+        var eolDateCell;
+        if (m.status === "eol" || m.status === "eol_announced") {
+          if (m.eolDate) {
+            eolDateCell = e("span", { style: { color: "#ef4444", fontWeight: 700, fontFamily: mono, fontSize: 12 } }, m.eolDate);
+          } else {
+            eolDateCell = e("span", { style: { color: "#71717a", fontStyle: "italic", fontSize: 12 } }, "No date");
+          }
+        } else if (m.status === "active") {
+          eolDateCell = e("span", { style: { color: "#22c55e", fontSize: 12 } }, "—");
+        } else {
+          eolDateCell = e("span", { style: { color: "#a1a1aa", fontSize: 12, fontFamily: mono } }, m.eolDate || "—");
+        }
+
+        return e("tr", {
+          key: i,
+          style: { background: i % 2 === 0 ? "#0c0c0f" : "#0e0e12", borderBottom: "1px solid #141418" },
+          onMouseEnter: function(ev) { ev.currentTarget.style.background = "#14141a"; },
+          onMouseLeave: function(ev) { ev.currentTarget.style.background = i % 2 === 0 ? "#0c0c0f" : "#0e0e12"; },
+        },
+          e("td", { style: { padding: "8px 12px", color: "#d4d4d8", fontFamily: mono, fontSize: 12, maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: m.originalItem || m.model }, m.model),
+          e("td", { style: { padding: "8px 12px", color: "#71717a", fontSize: 12 } }, m.category),
+          e("td", { style: { padding: "8px 12px" } }, e(StatusBadge, { status: m.status })),
+          e("td", { style: { padding: "8px 12px" } }, e(RiskBadge, { risk: m.risk })),
+          e("td", { style: { padding: "8px 12px", color: "#71717a", fontSize: 11, fontFamily: mono } }, m.eolReason && m.eolReason !== "none" ? m.eolReason.replace(/_/g, " ") : "—"),
+          e("td", { style: { padding: "8px 12px" } }, eolDateCell),
+          e("td", { style: { padding: "8px 12px" } }, e(DateSourceBadge, { dateSource: m.dateSource })),
+          e("td", { style: { padding: "8px 12px" } },
+            m.confidence ? e("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
+              e("div", { style: { width: 40, height: 4, background: "#1e1e24", borderRadius: 2, overflow: "hidden" } },
+                e("div", { style: { height: "100%", width: m.confidence + "%", background: m.confidence >= 80 ? "#22c55e" : m.confidence >= 60 ? "#ca8a04" : "#71717a", borderRadius: 2 } }),
+              ),
+              e("span", { style: { fontSize: 11, color: "#52525b", fontFamily: mono } }, m.confidence),
+            ) : "—"
+          ),
+          e("td", { style: { padding: "8px 12px", color: "#52525b", fontSize: 11, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: m.notes }, m.notes || "—"),
+        );
+      })
+    )
+  );
+}
+
+function ManufacturerGroup({ name, models, expanded, onToggle }) {
+  const eolCount = models.filter(function(m) { return m.status === "eol"; }).length;
+  const activeCount = models.filter(function(m) { return m.status === "active"; }).length;
+  const otherCount = models.length - eolCount - activeCount;
+  const secRisk = models.filter(function(m) { return m.risk === "security"; }).length;
+
+  return e("div", { style: { marginBottom: 2 } },
+    e("button", {
+      onClick: onToggle,
+      style: {
+        width: "100%", display: "flex", alignItems: "center", gap: 12,
+        padding: "12px 16px", background: expanded ? "#111114" : "#0c0c0f",
+        border: "1px solid #1e1e24", borderRadius: expanded ? "6px 6px 0 0" : "6px",
+        cursor: "pointer", color: "#e4e4e7", textAlign: "left", transition: "background 0.15s",
+      },
+      onMouseEnter: function(ev) { ev.currentTarget.style.background = "#131318"; },
+      onMouseLeave: function(ev) { ev.currentTarget.style.background = expanded ? "#111114" : "#0c0c0f"; },
+    },
+      e("span", {
+        style: {
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 20, height: 20, fontSize: 11, color: "#71717a",
+          transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+          transition: "transform 0.2s", fontFamily: "monospace",
+        }
+      }, "\u25B6"),
+      e("span", { style: { flex: 1, fontWeight: 600, fontSize: 14, fontFamily: mono } }, name || "(no manufacturer)"),
+      e("span", { style: { fontSize: 12, color: "#71717a", fontFamily: mono } }, models.length + " models"),
+      e("div", { style: { display: "flex", gap: 8, marginLeft: 8 } },
+        eolCount > 0 ? e("span", { style: { color: "#ef4444", fontSize: 12, fontFamily: mono, fontWeight: 600 } }, eolCount + " EOL") : null,
+        activeCount > 0 ? e("span", { style: { color: "#22c55e", fontSize: 12, fontFamily: mono, fontWeight: 600 } }, activeCount + " Active") : null,
+        otherCount > 0 ? e("span", { style: { color: "#ca8a04", fontSize: 12, fontFamily: mono, fontWeight: 600 } }, otherCount + " Other") : null,
+        secRisk > 0 ? e("span", { style: { color: "#ef4444", fontSize: 11, padding: "1px 6px", background: "#2d1215", borderRadius: 3, fontFamily: mono } }, "\u26A0 " + secRisk) : null,
+      ),
+    ),
+    expanded ? e("div", { style: { border: "1px solid #1e1e24", borderTop: "none", borderRadius: "0 0 6px 6px", overflow: "auto" } },
+      e(ModelTable, { models: models }),
+    ) : null,
+  );
+}
+
+function downloadTemplate(format) {
+  var headers = ["Model", "Manufacturer", "Category", "Condition", "EOL Status", "EOL Date", "EOS Date", "Risk Category", "EOL Reason", "Confidence", "Source", "Notes", "Original_Item"];
+  var rows = [
+    ["EX4300-48T", "Juniper", "switch", "used", "eol", "2023-03-31", "2026-03-31", "security", "manufacturer_declared", 90, "juniper-eol", "EX4300 series end of life", ""],
+    ["EPYC 7413", "AMD", "cpu", "new", "active", "", "", "none", "", "", "", "Current generation EPYC", ""],
+    ["PM893", "Samsung", "ssd", "new", "eol", "", "", "procurement", "product_discontinued", 75, "samsung-product-rules", "Replaced by PM897", ""],
+    ["KSM32RD8/32HCR", "Kingston", "memory", "new", "active", "", "", "none", "", "", "", "DDR4-3200 RDIMM", ""],
+    ["R630", "Dell", "server", "used", "eol", "", "", "support", "manufacturer_declared", 85, "dell-static-lookup", "PowerEdge R630", ""],
+  ];
+  var ws = XLSX.utils.aoa_to_sheet([headers].concat(rows));
+  ws["!cols"] = [
+    { wch: 40 }, { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 12 },
+    { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 22 }, { wch: 12 },
+    { wch: 20 }, { wch: 30 }, { wch: 30 },
+  ];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "EOL Results");
+  if (format === "csv") {
+    var csv = XLSX.utils.sheet_to_csv(ws);
+    var blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    var link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "eol-template.csv";
+    link.click();
+    URL.revokeObjectURL(link.href);
+  } else {
+    XLSX.writeFile(wb, "eol-template.xlsx");
+  }
+}
+
+function App() {
+  const [data, setData] = useState(null);
+  const [expanded, setExpanded] = useState({});
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [riskFilter, setRiskFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState("manufacturer");
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef(null);
+  const [searchResult, setSearchResult] = useState(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const [searchModel, setSearchModel] = useState("");
+  const [searchMfr, setSearchMfr] = useState("");
+
+  var parseFile = useCallback(function(file) {
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      try {
+        var wb = XLSX.read(new Uint8Array(ev.target.result), { type: "array" });
+        var sheetName = wb.SheetNames.find(function(n) {
+          return n.toLowerCase().indexOf("eol") !== -1 || n.toLowerCase().indexOf("result") !== -1;
+        }) || wb.SheetNames[0];
+        var rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: "" });
+
+        var models = rows.map(function(r) {
+          return {
+            model: r["Model"] || r["model"] || "",
+            manufacturer: r["Manufacturer"] || r["manufacturer"] || "",
+            category: r["Category"] || r["category"] || "",
+            condition: r["Condition"] || r["condition"] || "",
+            status: (r["EOL Status"] || r["status"] || "unknown").toLowerCase().trim(),
+            eolDate: r["EOL Date"] || r["eol_date"] || "",
+            eosDate: r["EOS Date"] || r["eos_date"] || "",
+            confidence: parseInt(r["Confidence"] || r["confidence"] || "0") || 0,
+            source: r["Source"] || r["source"] || "",
+            notes: r["Notes"] || r["notes"] || "",
+            eolReason: r["EOL Reason"] || r["eol_reason"] || "none",
+            risk: (r["Risk Category"] || r["risk_category"] || "none").toLowerCase().trim(),
+            originalItem: r["Original_Item"] || r["original_item"] || "",
+            dateSource: r["Date Source"] || r["date_source"] || "none",
+          };
+        }).filter(function(m) { return m.model; });
+
+        setData({ models: models, fileName: file.name });
+        setExpanded({});
+      } catch (err) {
+        alert("Failed to parse file: " + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }, []);
+
+  var handleDrop = useCallback(function(ev) {
+    ev.preventDefault();
+    setDragOver(false);
+    var file = ev.dataTransfer.files[0];
+    if (file) parseFile(file);
+  }, [parseFile]);
+
+  var handleFileInput = useCallback(function(ev) {
+    var file = ev.target.files[0];
+    if (file) parseFile(file);
+  }, [parseFile]);
+
+  var filtered = useMemo(function() {
+    if (!data) return [];
+    return data.models.filter(function(m) {
+      if (statusFilter !== "all" && m.status !== statusFilter) return false;
+      if (riskFilter !== "all" && m.risk !== riskFilter) return false;
+      if (searchQuery) {
+        var q = searchQuery.toLowerCase();
+        return m.model.toLowerCase().indexOf(q) !== -1 ||
+          m.manufacturer.toLowerCase().indexOf(q) !== -1 ||
+          m.category.toLowerCase().indexOf(q) !== -1 ||
+          (m.originalItem || "").toLowerCase().indexOf(q) !== -1;
+      }
+      return true;
+    });
+  }, [data, statusFilter, riskFilter, searchQuery]);
+
+  var grouped = useMemo(function() {
+    var groups = {};
+    filtered.forEach(function(m) {
+      var key = m.manufacturer || "(no manufacturer)";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(m);
+    });
+    var entries = Object.entries(groups);
+    if (sortBy === "manufacturer") entries.sort(function(a, b) { return a[0].localeCompare(b[0]); });
+    else if (sortBy === "count") entries.sort(function(a, b) { return b[1].length - a[1].length; });
+    else if (sortBy === "eol") entries.sort(function(a, b) {
+      return b[1].filter(function(m) { return m.status === "eol"; }).length - a[1].filter(function(m) { return m.status === "eol"; }).length;
+    });
+    else if (sortBy === "risk") entries.sort(function(a, b) {
+      return b[1].filter(function(m) { return m.risk === "security"; }).length - a[1].filter(function(m) { return m.risk === "security"; }).length;
+    });
+    return entries;
+  }, [filtered, sortBy]);
+
+  var stats = useMemo(function() {
+    if (!data) return null;
+    var m = data.models;
+    return {
+      total: m.length,
+      eol: m.filter(function(x) { return x.status === "eol"; }).length,
+      active: m.filter(function(x) { return x.status === "active"; }).length,
+      unknown: m.filter(function(x) { return x.status === "unknown"; }).length,
+      notFound: m.filter(function(x) { return x.status === "not_found"; }).length,
+      dated: m.filter(function(x) { return x.eolDate && x.eolDate !== ""; }).length,
+      security: m.filter(function(x) { return x.risk === "security"; }).length,
+      support: m.filter(function(x) { return x.risk === "support"; }).length,
+      procurement: m.filter(function(x) { return x.risk === "procurement"; }).length,
+    };
+  }, [data]);
+
+  var toggleAll = useCallback(function(expand) {
+    var next = {};
+    grouped.forEach(function(pair) { next[pair[0]] = expand; });
+    setExpanded(next);
+  }, [grouped]);
+
+  var exportData = useCallback(function(models, label) {
+    var format = document.getElementById("export-format") ? document.getElementById("export-format").value : "xlsx";
+    var today = new Date().toISOString().slice(0, 10);
+
+    // Build rows with the columns the report needs
+    var rows = models.map(function(m) {
+      return {
+        "Model": m.originalItem || m.model,
+        "Manufacturer": m.manufacturer,
+        "Category": m.category,
+        "Condition": m.condition,
+        "EOL Status": (m.status || "").toUpperCase(),
+        "EOL Date": m.eolDate || "",
+        "EOS Date": m.eosDate || "",
+        "Date Source": m.dateSource === "manufacturer_confirmed" ? "Manufacturer Confirmed" : m.dateSource === "community_database" ? "Community Database" : "Not Available",
+        "Risk Category": (m.risk || "none") !== "none" ? m.risk.charAt(0).toUpperCase() + m.risk.slice(1) : "",
+        "EOL Reason": (m.eolReason || "none") !== "none" ? m.eolReason.replace(/_/g, " ") : "",
+        "Confidence": m.confidence || "",
+        "Source": m.source || "",
+        "Notes": m.notes || "",
+      };
+    });
+
+    // Sort by manufacturer then model
+    rows.sort(function(a, b) {
+      var mfr = (a["Manufacturer"] || "").localeCompare(b["Manufacturer"] || "");
+      if (mfr !== 0) return mfr;
+      return (a["Model"] || "").localeCompare(b["Model"] || "");
+    });
+
+    var ws = XLSX.utils.json_to_sheet(rows);
+
+    // Set column widths
+    ws["!cols"] = [
+      { wch: 50 },  // Model
+      { wch: 15 },  // Manufacturer
+      { wch: 15 },  // Category
+      { wch: 10 },  // Condition
+      { wch: 12 },  // EOL Status
+      { wch: 12 },  // EOL Date
+      { wch: 12 },  // EOS Date
+      { wch: 22 },  // Date Source
+      { wch: 14 },  // Risk Category
+      { wch: 22 },  // EOL Reason
+      { wch: 10 },  // Confidence
+      { wch: 20 },  // Source
+      { wch: 40 },  // Notes
+    ];
+
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "EOL Report");
+
+    // Add summary sheet
+    var summaryRows = [];
+    var mfrs = {};
+    models.forEach(function(m) {
+      var key = m.manufacturer || "(no manufacturer)";
+      if (!mfrs[key]) mfrs[key] = { total: 0, eol: 0, active: 0, unknown: 0, security: 0, support: 0 };
+      mfrs[key].total++;
+      if (m.status === "eol") mfrs[key].eol++;
+      if (m.status === "active") mfrs[key].active++;
+      if (m.status === "unknown" || m.status === "not_found") mfrs[key].unknown++;
+      if (m.risk === "security") mfrs[key].security++;
+      if (m.risk === "support") mfrs[key].support++;
+    });
+    Object.keys(mfrs).sort().forEach(function(key) {
+      var s = mfrs[key];
+      summaryRows.push({
+        "Manufacturer": key,
+        "Total Models": s.total,
+        "EOL": s.eol,
+        "Active": s.active,
+        "Unknown": s.unknown,
+        "Security Risk": s.security,
+        "Support Risk": s.support,
+        "Coverage %": s.total > 0 ? Math.round((s.eol + s.active) / s.total * 100) + "%" : "0%",
+      });
+    });
+
+    // Add totals row
+    var totals = { total: 0, eol: 0, active: 0, unknown: 0, security: 0, support: 0 };
+    models.forEach(function(m) {
+      totals.total++;
+      if (m.status === "eol") totals.eol++;
+      if (m.status === "active") totals.active++;
+      if (m.status === "unknown" || m.status === "not_found") totals.unknown++;
+      if (m.risk === "security") totals.security++;
+      if (m.risk === "support") totals.support++;
+    });
+    summaryRows.push({
+      "Manufacturer": "TOTAL",
+      "Total Models": totals.total,
+      "EOL": totals.eol,
+      "Active": totals.active,
+      "Unknown": totals.unknown,
+      "Security Risk": totals.security,
+      "Support Risk": totals.support,
+      "Coverage %": totals.total > 0 ? Math.round((totals.eol + totals.active) / totals.total * 100) + "%" : "0%",
+    });
+
+    var ws2 = XLSX.utils.json_to_sheet(summaryRows);
+    ws2["!cols"] = [
+      { wch: 20 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 12 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws2, "Summary");
+
+    var filename = "eol-report-" + label + "-" + today;
+
+    if (format === "csv") {
+      var csv = XLSX.utils.sheet_to_csv(ws);
+      var blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      var link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = filename + ".csv";
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } else {
+      XLSX.writeFile(wb, filename + ".xlsx");
+    }
+  }, [data, filtered]);
+
+  // Search handler
+  var handleSearch = useCallback(function() {
+    if (!searchModel.trim()) { setSearchError("Please enter a model number"); return; }
+    setSearchLoading(true);
+    setSearchError("");
+    setSearchResult(null);
+    fetch(API_BASE + "/api/lookup?model=" + encodeURIComponent(searchModel) + "&manufacturer=" + encodeURIComponent(searchMfr))
+      .then(function(resp) {
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        return resp.json();
+      })
+      .then(function(data) { setSearchResult(data); setSearchLoading(false); })
+      .catch(function(err) {
+        setSearchError(err.message === "Failed to fetch" ? "API unavailable \u2014 start the server with eol-tool serve" : err.message);
+        setSearchLoading(false);
+      });
+  }, [searchModel, searchMfr]);
+
+  var handleSearchKeyDown = useCallback(function(ev) {
+    if (ev.key === "Enter") handleSearch();
+  }, [handleSearch]);
+
+  // Upload screen
+  if (!data) {
+    var colStyle = { padding: "6px 10px", borderBottom: "1px solid #1e1e24", fontSize: 12, fontFamily: mono };
+    var thStyle = Object.assign({}, colStyle, { color: "#a1a1aa", fontWeight: 600, textAlign: "left", background: "#0a0a0d", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" });
+    var tdStyle = Object.assign({}, colStyle, { color: "#71717a" });
+    var tdReq = Object.assign({}, tdStyle, { color: "#e4e4e7" });
+    var tagReq = { display: "inline-block", padding: "1px 6px", borderRadius: 3, background: "#2d1215", color: "#ef4444", fontSize: 9, fontWeight: 600, fontFamily: mono, marginLeft: 6, verticalAlign: "middle" };
+    var tagOpt = { display: "inline-block", padding: "1px 6px", borderRadius: 3, background: "#1a1a1e", color: "#71717a", fontSize: 9, fontWeight: 600, fontFamily: mono, marginLeft: 6, verticalAlign: "middle" };
+
+    var columns = [
+      ["Model", "Hardware model name or part number", "EX4300-48T, XEON E5-2683V4, KSM32RD8/32HCR", true],
+      ["Manufacturer", "Vendor/brand name", "Juniper, Intel, Kingston, Samsung", true],
+      ["Category", "Hardware type", "switch, cpu, memory, ssd, hdd, nic, gpu", true],
+      ["EOL Status", "End-of-life classification", "eol, active, unknown, not_found", true],
+      ["Risk Category", "Operational risk level", "security, support, procurement, informational", false],
+      ["EOL Reason", "How the status was determined", "manufacturer_declared, technology_generation", false],
+      ["Condition", "New or used inventory", "new, used", false],
+      ["EOL Date", "Date of end-of-life", "2024-01-15", false],
+      ["EOS Date", "Date of end-of-support", "2025-06-30", false],
+      ["Confidence", "Classification confidence 0-100", "85, 70, 50", false],
+      ["Source", "Data source for classification", "endoflife.date, juniper-eol-page", false],
+      ["Notes", "Additional context", "EPYC 7002 Rome - superseded by Genoa", false],
+      ["Original_Item", "Raw inventory string for traceability", "PROCESSORS:NEW:E5-2683 v4", false],
+    ];
+
+    // Build search result card
+    var resultCard = null;
+    if (searchResult && !searchLoading) {
+      var sr = searchResult;
+      var isNotRecognized = sr.status === "not_found" || (sr.status === "unknown" && sr.confidence === 0);
+
+      if (isNotRecognized) {
+        resultCard = e("div", {
+          style: { background: "#111114", border: "1px solid #1e1e24", borderRadius: 10, padding: 24, marginTop: 16 },
+        },
+          e("div", { style: { fontSize: 16, fontWeight: 600, color: "#71717a", fontFamily: mono, marginBottom: 8 } }, "Model not recognized"),
+          e("p", { style: { fontSize: 13, color: "#52525b", lineHeight: 1.5 } }, "Try using the full model number and specifying the manufacturer."),
+          e("button", {
+            onClick: function() { setSearchResult(null); setSearchModel(""); setSearchMfr(""); },
+            style: { marginTop: 12, padding: "8px 16px", background: "#1e1e24", border: "none", borderRadius: 6, color: "#a1a1aa", fontSize: 12, cursor: "pointer", fontFamily: mono },
+          }, "Search Another"),
+        );
+      } else {
+        var srDateSourceBadge;
+        if (sr.date_source === "manufacturer_confirmed") {
+          srDateSourceBadge = e("span", { style: { padding: "2px 8px", borderRadius: 3, background: "#0d2818", color: "#22c55e", fontSize: 10, fontWeight: 600, fontFamily: mono } }, "Manufacturer Confirmed");
+        } else if (sr.date_source === "community_database") {
+          srDateSourceBadge = e("span", { style: { padding: "2px 8px", borderRadius: 3, background: "#0c1929", color: "#3b82f6", fontSize: 10, fontWeight: 600, fontFamily: mono } }, "Community Database");
+        } else {
+          srDateSourceBadge = e("span", { style: { padding: "2px 8px", borderRadius: 3, background: "#1a1a1e", color: "#71717a", fontSize: 10, fontWeight: 600, fontFamily: mono } }, "Not Available");
+        }
+
+        resultCard = e("div", {
+          style: { background: "#111114", border: "1px solid #1e1e24", borderRadius: 10, padding: 24, marginTop: 16 },
+        },
+          // Top row: model + manufacturer
+          e("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 12 } },
+            e("span", { style: { fontSize: 18, fontWeight: 700, fontFamily: mono, color: "#e4e4e7" } }, sr.model),
+            sr.manufacturer ? e("span", { style: { fontSize: 13, color: "#71717a" } }, sr.manufacturer) : null,
+          ),
+          // Status badge
+          e("div", { style: { marginBottom: 16 } }, e(StatusBadge, { status: sr.status })),
+          // Main content
+          e("div", { style: { display: "flex", gap: 32, flexWrap: "wrap" } },
+            // Left: dates
+            e("div", { style: { flex: 1, minWidth: 200 } },
+              e("div", { style: { marginBottom: 12 } },
+                e("div", { style: { fontSize: 11, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, fontFamily: mono } }, "EOL Date"),
+                sr.eol_date
+                  ? e("div", { style: { fontSize: 24, fontWeight: 700, fontFamily: mono, color: sr.status === "eol" || sr.status === "eol_announced" ? "#ef4444" : "#22c55e" } }, sr.eol_date)
+                  : e("div", { style: { fontSize: 16, color: "#71717a", fontStyle: "italic" } }, "No manufacturer date available"),
+              ),
+              e("div", { style: { marginBottom: 12 } },
+                e("div", { style: { fontSize: 11, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, fontFamily: mono } }, "Date Source"),
+                srDateSourceBadge,
+              ),
+              sr.eos_date ? e("div", { style: { marginBottom: 12 } },
+                e("div", { style: { fontSize: 11, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, fontFamily: mono } }, "EOS Date"),
+                e("div", { style: { fontSize: 14, fontFamily: mono, color: "#a1a1aa" } }, sr.eos_date),
+              ) : null,
+            ),
+            // Right: metadata
+            e("div", { style: { flex: 1, minWidth: 200 } },
+              sr.risk_category && sr.risk_category !== "none" ? e("div", { style: { marginBottom: 12 } },
+                e("div", { style: { fontSize: 11, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, fontFamily: mono } }, "Risk Category"),
+                e(RiskBadge, { risk: sr.risk_category }),
+              ) : null,
+              sr.eol_reason && sr.eol_reason !== "none" ? e("div", { style: { marginBottom: 12 } },
+                e("div", { style: { fontSize: 11, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, fontFamily: mono } }, "EOL Reason"),
+                e("div", { style: { fontSize: 13, color: "#a1a1aa", fontFamily: mono } }, sr.eol_reason.replace(/_/g, " ")),
+              ) : null,
+              sr.confidence ? e("div", { style: { marginBottom: 12 } },
+                e("div", { style: { fontSize: 11, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, fontFamily: mono } }, "Confidence"),
+                e("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+                  e("div", { style: { width: 80, height: 6, background: "#1e1e24", borderRadius: 3, overflow: "hidden" } },
+                    e("div", { style: { height: "100%", width: sr.confidence + "%", background: sr.confidence >= 80 ? "#22c55e" : sr.confidence >= 60 ? "#ca8a04" : "#71717a", borderRadius: 3 } }),
+                  ),
+                  e("span", { style: { fontSize: 13, fontFamily: mono, color: "#a1a1aa" } }, sr.confidence + "%"),
+                ),
+              ) : null,
+              sr.source ? e("div", { style: { marginBottom: 12 } },
+                e("div", { style: { fontSize: 11, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, fontFamily: mono } }, "Source"),
+                e("div", { style: { fontSize: 12, color: "#52525b", fontFamily: mono } }, sr.source),
+              ) : null,
+            ),
+          ),
+          // Notes
+          sr.notes ? e("div", { style: { marginTop: 12, paddingTop: 12, borderTop: "1px solid #1e1e24" } },
+            e("div", { style: { fontSize: 11, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, fontFamily: mono } }, "Notes"),
+            e("div", { style: { fontSize: 12, color: "#52525b", lineHeight: 1.5 } }, sr.notes),
+          ) : null,
+          // Search Another
+          e("button", {
+            onClick: function() { setSearchResult(null); setSearchModel(""); setSearchMfr(""); },
+            style: { marginTop: 16, padding: "8px 16px", background: "#1e1e24", border: "none", borderRadius: 6, color: "#a1a1aa", fontSize: 12, cursor: "pointer", fontFamily: mono },
+          }, "Search Another"),
+        );
+      }
+    }
+
+    return e("div", {
+      style: { minHeight: "100vh", background: "#08080b", display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 20px" },
+    },
+      e("div", { style: { maxWidth: 720, width: "100%" } },
+
+        // SECTION 1: Look Up a Single Model
+        e("div", {
+          style: {
+            background: "#0c0c0f", border: "1px solid #1e1e24", borderRadius: 10,
+            padding: 24, maxWidth: 720, width: "100%", marginBottom: 24,
+          },
+        },
+          e("h2", { style: { fontSize: 18, fontWeight: 700, color: "#e4e4e7", fontFamily: mono, marginBottom: 4 } }, "Look Up a Single Model"),
+          e("p", { style: { fontSize: 13, color: "#71717a", marginBottom: 16 } }, "Search for any hardware model to check its end-of-life status and dates."),
+          e("div", { style: { display: "flex", gap: 8, marginBottom: 8 } },
+            e("input", {
+              type: "text", placeholder: "Model number e.g. EX4300-48T",
+              value: searchModel, onChange: function(ev) { setSearchModel(ev.target.value); },
+              onKeyDown: handleSearchKeyDown,
+              style: {
+                flex: 2, padding: "10px 14px", background: "#111114", border: "1px solid #1e1e24",
+                borderRadius: 6, color: "#e4e4e7", fontSize: 13, fontFamily: mono,
+              },
+            }),
+            e("input", {
+              type: "text", placeholder: "Manufacturer (optional)",
+              value: searchMfr, onChange: function(ev) { setSearchMfr(ev.target.value); },
+              onKeyDown: handleSearchKeyDown,
+              style: {
+                flex: 1, padding: "10px 14px", background: "#111114", border: "1px solid #1e1e24",
+                borderRadius: 6, color: "#e4e4e7", fontSize: 13, fontFamily: mono,
+              },
+            }),
+            e("button", {
+              onClick: handleSearch, disabled: searchLoading,
+              style: {
+                padding: "10px 20px", background: "#3b82f6", color: "white", fontWeight: 600,
+                border: "none", borderRadius: 6, fontSize: 13, cursor: searchLoading ? "not-allowed" : "pointer",
+                fontFamily: mono, opacity: searchLoading ? 0.7 : 1,
+              },
+            }, searchLoading ? "Searching..." : "Search"),
+          ),
+          searchError ? e("div", { style: { color: "#ef4444", fontSize: 12, marginTop: 4 } }, searchError) : null,
+          resultCard,
+        ),
+
+        // SECTION 2: Divider
+        e("div", {
+          style: { display: "flex", alignItems: "center", gap: 16, marginBottom: 24 },
+        },
+          e("hr", { style: { flex: 1, border: "none", borderTop: "1px solid #1e1e24" } }),
+          e("span", { style: { color: "#52525b", fontSize: 12, fontFamily: mono, whiteSpace: "nowrap" } }, "or upload a spreadsheet for bulk analysis"),
+          e("hr", { style: { flex: 1, border: "none", borderTop: "1px solid #1e1e24" } }),
+        ),
+
+        // SECTION 3: Drop zone
+        e("div", {
+          onDragOver: function(ev) { ev.preventDefault(); setDragOver(true); },
+          onDragLeave: function() { setDragOver(false); },
+          onDrop: handleDrop,
+          onClick: function() { fileRef.current && fileRef.current.click(); },
+          style: {
+            width: "100%", padding: "40px 48px", borderRadius: 12,
+            border: "2px dashed " + (dragOver ? "#3b82f6" : "#1e1e24"),
+            background: dragOver ? "#0c1929" : "#0c0c0f",
+            textAlign: "center", transition: "all 0.2s", cursor: "pointer",
+            marginBottom: 24,
+          },
+        },
+          e("input", { ref: fileRef, type: "file", accept: ".xlsx,.xls,.csv", onChange: handleFileInput, style: { display: "none" } }),
+          e("div", { style: { fontSize: 48, marginBottom: 12 } }, "\uD83D\uDCCA"),
+          e("h1", { style: { fontSize: 22, fontWeight: 700, color: "#e4e4e7", marginBottom: 8, fontFamily: mono } }, "EOL Hardware Checker"),
+          e("p", { style: { color: "#71717a", fontSize: 14, lineHeight: 1.6, marginBottom: 4 } }, "Drop your EOL results spreadsheet here or click to browse."),
+          e("p", { style: { color: "#3a3a42", fontSize: 12, fontFamily: mono } }, "Accepts .xlsx or .xls files"),
+        ),
+
+        // SECTION 4: Format reference
+        e("div", {
+          style: {
+            background: "#0c0c0f", border: "1px solid #1e1e24", borderRadius: 10,
+            overflow: "hidden",
+          },
+        },
+          // Header
+          e("div", { style: { padding: "14px 20px", borderBottom: "1px solid #1e1e24", display: "flex", alignItems: "center", justifyContent: "space-between" } },
+            e("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+              e("span", { style: { fontSize: 14 } }, "\uD83D\uDCC4"),
+              e("span", { style: { fontSize: 13, fontWeight: 600, color: "#e4e4e7", fontFamily: mono } }, "Required Spreadsheet Format"),
+            ),
+            e("div", { style: { display: "flex", gap: 8 } },
+              e("span", { style: tagReq }, "REQUIRED"),
+              e("span", { style: tagOpt }, "OPTIONAL"),
+            ),
+          ),
+
+          // Description
+          e("div", { style: { padding: "12px 20px", borderBottom: "1px solid #1e1e24", color: "#71717a", fontSize: 12, lineHeight: 1.5 } },
+            "Your spreadsheet should contain an ", e("strong", { style: { color: "#a1a1aa" } }, "EOL Results"), " or ", e("strong", { style: { color: "#a1a1aa" } }, "Results"), " sheet (or the first sheet will be used). Column headers must be in the first row. Only ", e("strong", { style: { color: "#e4e4e7" } }, "Model"), ", ", e("strong", { style: { color: "#e4e4e7" } }, "Manufacturer"), ", ", e("strong", { style: { color: "#e4e4e7" } }, "Category"), ", and ", e("strong", { style: { color: "#e4e4e7" } }, "EOL Status"), " are required \u2014 all other columns enhance the display."
+          ),
+
+          // Table
+          e("div", { style: { overflowX: "auto" } },
+            e("table", { style: { width: "100%", borderCollapse: "collapse" } },
+              e("thead", null,
+                e("tr", null,
+                  e("th", { style: thStyle }, "Column"),
+                  e("th", { style: thStyle }, "Description"),
+                  e("th", { style: thStyle }, "Example Values"),
+                ),
+              ),
+              e("tbody", null,
+                columns.map(function(col) {
+                  return e("tr", { key: col[0] },
+                    e("td", { style: col[3] ? tdReq : tdStyle },
+                      col[0],
+                      e("span", { style: col[3] ? tagReq : tagOpt }, col[3] ? "REQ" : "OPT"),
+                    ),
+                    e("td", { style: tdStyle }, col[1]),
+                    e("td", { style: Object.assign({}, tdStyle, { color: "#52525b", fontSize: 11 }) }, col[2]),
+                  );
+                }),
+              ),
+            ),
+          ),
+
+          // Download template buttons
+          e("div", { style: { padding: "12px 20px", borderTop: "1px solid #1e1e24", display: "flex", gap: 8 } },
+            e("button", {
+              onClick: function() { downloadTemplate("xlsx"); },
+              style: {
+                background: "#0c1929", border: "1px solid #1d3a5c", color: "#3b82f6",
+                fontSize: 12, fontWeight: 600, fontFamily: mono, borderRadius: 6,
+                padding: "8px 16px", cursor: "pointer",
+              },
+              onMouseEnter: function(ev) { ev.currentTarget.style.background = "#0f2035"; },
+              onMouseLeave: function(ev) { ev.currentTarget.style.background = "#0c1929"; },
+            }, "\u2B07 Download Template (.xlsx)"),
+            e("button", {
+              onClick: function() { downloadTemplate("csv"); },
+              style: {
+                background: "#0c1929", border: "1px solid #2a2a32", color: "#a1a1aa",
+                fontSize: 12, fontWeight: 600, fontFamily: mono, borderRadius: 6,
+                padding: "8px 16px", cursor: "pointer",
+              },
+              onMouseEnter: function(ev) { ev.currentTarget.style.background = "#0f2035"; },
+              onMouseLeave: function(ev) { ev.currentTarget.style.background = "#0c1929"; },
+            }, "\u2B07 Download Template (.csv)"),
+          ),
+
+          // Footer tip
+          e("div", { style: { padding: "12px 20px", borderTop: "1px solid #1e1e24", display: "flex", alignItems: "flex-start", gap: 8 } },
+            e("span", { style: { color: "#ca8a04", fontSize: 12, flexShrink: 0 } }, "\u26A0"),
+            e("span", { style: { color: "#52525b", fontSize: 11, lineHeight: 1.5 } },
+              "This tool runs entirely in your browser. No data is uploaded to any server. Generate the results spreadsheet using ",
+              e("span", { style: { color: "#a1a1aa", fontFamily: mono, fontSize: 11 } }, "eol-tool check --input models.xlsx --output results.xlsx"),
+              " then upload it here to visualize."
+            ),
+          ),
+        ),
+
+        // Footer
+        e("div", { style: { marginTop: 24, textAlign: "center" } },
+          e("p", { style: { fontSize: 11, color: "#3a3a42", fontFamily: mono } }, "eol-tool \u2014 Hardware End-of-Life Checker"),
+        ),
+      ),
+    );
+  }
+
+  // Dashboard
+  return e("div", { style: { minHeight: "100vh", background: "#08080b", color: "#e4e4e7" } },
+    e("div", { style: { maxWidth: 1200, margin: "0 auto", padding: "24px 20px" } },
+
+      // Header
+      e("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 } },
+        e("div", null,
+          e("h1", { style: { fontSize: 20, fontWeight: 700, fontFamily: mono, margin: 0 } }, "EOL Hardware Report"),
+          e("p", { style: { fontSize: 12, color: "#52525b", margin: "4px 0 0", fontFamily: mono } }, data.fileName + " \u2014 " + stats.total + " models"),
+        ),
+        e("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
+          e("select", {
+            id: "export-format",
+            style: { padding: "8px 10px", background: "#111114", border: "1px solid #2a2a32", borderRadius: 6, color: "#a1a1aa", fontSize: 12, cursor: "pointer", fontFamily: mono },
+          },
+            e("option", { value: "xlsx" }, ".xlsx"),
+            e("option", { value: "csv" }, ".csv"),
+          ),
+          e("button", {
+            onClick: function() { exportData(filtered, "filtered"); },
+            style: {
+              padding: "8px 16px", background: "#0c1929", border: "1px solid #1d3a5c",
+              borderRadius: 6, color: "#3b82f6", fontSize: 12, cursor: "pointer", fontFamily: mono,
+              fontWeight: 600,
+            },
+            onMouseEnter: function(ev) { ev.currentTarget.style.background = "#0f2035"; },
+            onMouseLeave: function(ev) { ev.currentTarget.style.background = "#0c1929"; },
+          }, "\u2B07 Export Filtered (" + filtered.length + ")"),
+          e("button", {
+            onClick: function() { exportData(data.models, "all"); },
+            style: {
+              padding: "8px 16px", background: "#0d2818", border: "1px solid #1a5632",
+              borderRadius: 6, color: "#22c55e", fontSize: 12, cursor: "pointer", fontFamily: mono,
+              fontWeight: 600,
+            },
+            onMouseEnter: function(ev) { ev.currentTarget.style.background = "#103320"; },
+            onMouseLeave: function(ev) { ev.currentTarget.style.background = "#0d2818"; },
+          }, "\u2B07 Export All (" + stats.total + ")"),
+          e("button", {
+            onClick: function() { setData(null); },
+            style: {
+              padding: "8px 16px", background: "#1e1e24", border: "1px solid #2a2a32",
+              borderRadius: 6, color: "#a1a1aa", fontSize: 12, cursor: "pointer", fontFamily: mono,
+            },
+          }, "Upload New File"),
+        ),
+      ),
+
+      // Stats
+      e("div", { style: { display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" } },
+        e(StatCard, { label: "End of Life", value: stats.eol, color: "#ef4444", total: stats.total }),
+        e(StatCard, { label: "Active", value: stats.active, color: "#22c55e", total: stats.total }),
+        e(StatCard, { label: "Unknown", value: stats.unknown + stats.notFound, color: "#ca8a04", total: stats.total }),
+        e(StatCard, { label: "With Dates", value: stats.dated, color: "#3b82f6", total: stats.total }),
+        e(StatCard, { label: "Security Risk", value: stats.security, color: "#ef4444", total: stats.total }),
+        e(StatCard, { label: "Support Risk", value: stats.support, color: "#f97316", total: stats.total }),
+      ),
+
+      // Coverage bar
+      e("div", { style: { marginBottom: 24, background: "#111114", border: "1px solid #1e1e24", borderRadius: 6, padding: "16px 20px" } },
+        e("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 8 } },
+          e("span", { style: { fontSize: 12, color: "#71717a", fontFamily: mono } }, "Classification Coverage"),
+          e("span", { style: { fontSize: 14, fontWeight: 700, fontFamily: mono, color: "#e4e4e7" } },
+            ((stats.eol + stats.active) / stats.total * 100).toFixed(1) + "%"),
+        ),
+        e("div", { style: { height: 8, background: "#1e1e24", borderRadius: 4, overflow: "hidden", display: "flex" } },
+          e("div", { style: { height: "100%", width: (stats.eol / stats.total * 100) + "%", background: "#ef4444", transition: "width 0.6s" } }),
+          e("div", { style: { height: "100%", width: (stats.active / stats.total * 100) + "%", background: "#22c55e", transition: "width 0.6s" } }),
+          e("div", { style: { height: "100%", width: (stats.unknown / stats.total * 100) + "%", background: "#ca8a04", transition: "width 0.6s" } }),
+        ),
+        e("div", { style: { display: "flex", gap: 16, marginTop: 8 } },
+          [["EOL", "#ef4444", stats.eol], ["Active", "#22c55e", stats.active], ["Unknown", "#ca8a04", stats.unknown], ["Not Found", "#71717a", stats.notFound]].map(function(item) {
+            return e("div", { key: item[0], style: { display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#52525b" } },
+              e("span", { style: { width: 8, height: 8, borderRadius: 2, background: item[1] } }),
+              item[0] + ": " + item[2],
+            );
+          }),
+        ),
+      ),
+
+      // Filters
+      e("div", {
+        style: {
+          display: "flex", gap: 12, marginBottom: 16, alignItems: "center", flexWrap: "wrap",
+          background: "#0c0c0f", border: "1px solid #1e1e24", borderRadius: 6, padding: "12px 16px",
+        },
+      },
+        e("input", {
+          type: "text", placeholder: "Search models, manufacturers...",
+          value: searchQuery, onChange: function(ev) { setSearchQuery(ev.target.value); },
+          style: {
+            flex: 1, minWidth: 200, padding: "8px 12px", background: "#111114",
+            border: "1px solid #1e1e24", borderRadius: 4, color: "#e4e4e7", fontSize: 13,
+            fontFamily: mono,
+          },
+        }),
+        e("select", {
+          value: statusFilter, onChange: function(ev) { setStatusFilter(ev.target.value); },
+          style: { padding: "8px 12px", background: "#111114", border: "1px solid #1e1e24", borderRadius: 4, color: "#a1a1aa", fontSize: 12, cursor: "pointer", fontFamily: mono },
+        },
+          e("option", { value: "all" }, "All Status"),
+          e("option", { value: "eol" }, "EOL"),
+          e("option", { value: "active" }, "Active"),
+          e("option", { value: "unknown" }, "Unknown"),
+          e("option", { value: "not_found" }, "Not Found"),
+        ),
+        e("select", {
+          value: riskFilter, onChange: function(ev) { setRiskFilter(ev.target.value); },
+          style: { padding: "8px 12px", background: "#111114", border: "1px solid #1e1e24", borderRadius: 4, color: "#a1a1aa", fontSize: 12, cursor: "pointer", fontFamily: mono },
+        },
+          e("option", { value: "all" }, "All Risk"),
+          e("option", { value: "security" }, "Security"),
+          e("option", { value: "support" }, "Support"),
+          e("option", { value: "procurement" }, "Procurement"),
+          e("option", { value: "informational" }, "Info"),
+        ),
+        e("select", {
+          value: sortBy, onChange: function(ev) { setSortBy(ev.target.value); },
+          style: { padding: "8px 12px", background: "#111114", border: "1px solid #1e1e24", borderRadius: 4, color: "#a1a1aa", fontSize: 12, cursor: "pointer", fontFamily: mono },
+        },
+          e("option", { value: "manufacturer" }, "Sort: Name"),
+          e("option", { value: "count" }, "Sort: Count"),
+          e("option", { value: "eol" }, "Sort: Most EOL"),
+          e("option", { value: "risk" }, "Sort: Risk"),
+        ),
+        e("div", { style: { display: "flex", gap: 4 } },
+          e("button", {
+            onClick: function() { toggleAll(true); },
+            style: { padding: "6px 10px", background: "#1e1e24", border: "none", borderRadius: 4, color: "#71717a", fontSize: 11, cursor: "pointer", fontFamily: mono },
+          }, "Expand All"),
+          e("button", {
+            onClick: function() { toggleAll(false); },
+            style: { padding: "6px 10px", background: "#1e1e24", border: "none", borderRadius: 4, color: "#71717a", fontSize: 11, cursor: "pointer", fontFamily: mono },
+          }, "Collapse All"),
+        ),
+      ),
+
+      // Results count
+      e("div", { style: { fontSize: 12, color: "#52525b", marginBottom: 12, fontFamily: mono } },
+        filtered.length + " models across " + grouped.length + " manufacturers",
+        (statusFilter !== "all" || riskFilter !== "all" || searchQuery) ?
+          e("button", {
+            onClick: function() { setStatusFilter("all"); setRiskFilter("all"); setSearchQuery(""); },
+            style: { marginLeft: 12, padding: "2px 8px", background: "#1e1e24", border: "none", borderRadius: 3, color: "#71717a", fontSize: 11, cursor: "pointer" },
+          }, "Clear filters") : null,
+      ),
+
+      // Groups
+      e("div", { style: { display: "flex", flexDirection: "column", gap: 2 } },
+        grouped.map(function(pair) {
+          var name = pair[0], models = pair[1];
+          return e(ManufacturerGroup, {
+            key: name, name: name, models: models,
+            expanded: !!expanded[name],
+            onToggle: function() { setExpanded(function(prev) { var next = Object.assign({}, prev); next[name] = !next[name]; return next; }); },
+          });
+        }),
+      ),
+
+      grouped.length === 0 ? e("div", { style: { textAlign: "center", padding: 48, color: "#52525b", fontSize: 14 } }, "No models match the current filters.") : null,
+
+      // Footer
+      e("div", { style: { marginTop: 32, paddingTop: 16, borderTop: "1px solid #1e1e24", textAlign: "center" } },
+        e("p", { style: { fontSize: 11, color: "#3a3a42", fontFamily: mono } }, "eol-tool \u2014 Hardware End-of-Life Checker"),
+      ),
+    ),
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(e(App));
+</script>
+</body>
+</html>

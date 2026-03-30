@@ -1,0 +1,66 @@
+[
+  {
+    "cycle": "arrow-lake",
+    "releaseLabel": "Arrow Lake",
+    "releaseDate": "2024-10-24",
+    "discontinued": false,
+    "eol": false,
+    "lts": false
+  },
+  {
+    "cycle": "raptor-lake",
+    "releaseLabel": "Raptor Lake",
+    "releaseDate": "2022-10-20",
+    "discontinued": false,
+    "eol": false,
+    "lts": false
+  },
+  {
+    "cycle": "alder-lake",
+    "releaseLabel": "Alder Lake",
+    "releaseDate": "2021-11-04",
+    "discontinued": false,
+    "eol": false,
+    "lts": false
+  },
+  {
+    "cycle": "coffee-lake",
+    "releaseLabel": "Coffee Lake",
+    "releaseDate": "2017-10-05",
+    "discontinued": "2021-12-24",
+    "eol": "2025-06-30",
+    "lts": false
+  },
+  {
+    "cycle": "skylake",
+    "releaseLabel": "Skylake",
+    "releaseDate": "2015-08-05",
+    "discontinued": "2019-03-04",
+    "eol": "2022-09-30",
+    "lts": false
+  },
+  {
+    "cycle": "broadwell-xeon",
+    "releaseLabel": "Broadwell (Xeon E7v4/E7v4)",
+    "releaseDate": "2014-10-27",
+    "discontinued": "2018-11-01",
+    "eol": "2022-06-30",
+    "lts": false
+  },
+  {
+    "cycle": "haswell-xeon",
+    "releaseLabel": "Haswell (Xeon E5v3/E7v3)",
+    "releaseDate": "2013-06-04",
+    "discontinued": true,
+    "eol": "2021-12-31",
+    "lts": false
+  },
+  {
+    "cycle": "ivy-bridge-xeon",
+    "releaseLabel": "Ivy Bridge (Xeon E5v2/E7v2)",
+    "releaseDate": "2012-04-29",
+    "discontinued": "2015-06-05",
+    "eol": "2020-06-30",
+    "lts": false
+  }
+]
