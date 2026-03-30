@@ -4,8 +4,12 @@ import sqlite3
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
+import pytest
+
 from eol_tool.checkers.cisco import CiscoChecker
 from eol_tool.models import EOLReason, EOLStatus, HardwareModel, RiskCategory
+
+pytestmark = pytest.mark.playwright
 
 
 def _hw(

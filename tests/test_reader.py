@@ -4,6 +4,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 import openpyxl
+import pytest
 
 from eol_tool.models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategory
 from eol_tool.reader import read_models, write_results
@@ -11,6 +12,7 @@ from eol_tool.reader import read_models, write_results
 _DATA_FILE = Path(__file__).parent.parent / "data" / "eol_models_cleaned.xlsx"
 
 
+@pytest.mark.skipif(not _DATA_FILE.exists(), reason="inventory data file not present")
 class TestReadModels:
     def test_read_count(self):
         models = read_models(_DATA_FILE)

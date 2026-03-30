@@ -30,6 +30,7 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "pytest-httpx",
+    "pytest-timeout",
     "httpx",
     "ruff",
 ]
@@ -46,3 +47,6 @@ select = ["E", "F", "I", "W"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "playwright: tests that require playwright (skipped when playwright is not installed)",
+]
