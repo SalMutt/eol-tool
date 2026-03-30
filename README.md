@@ -1,32 +1,20 @@
-# eol-tool — Hardware End-of-Life Checker
+# eol-tool
 
-CLI tool and web dashboard for checking datacenter hardware end-of-life status. Queries manufacturer data sources for real EOL dates — no hardcoded or estimated dates.
+**Hardware End-of-Life Checker** — Real manufacturer EOL dates for datacenter hardware.
 
-## Features
-
-- Checks 1000+ hardware models across 40+ manufacturers
-- Real EOL dates from manufacturer sources (Intel ARK, Juniper EOL pages, Cisco bulletins, endoflife.date API)
-- Playwright-based scrapers for JavaScript-rendered vendor pages
-- Single-model lookup via REST API
-- Bulk spreadsheet processing (xlsx input/output)
-- Web dashboard with search, filters, collapsible manufacturer groups, and export
-- SQLite cache with configurable TTL — refreshable with `eol-tool update`
-- Risk categorization: security, support, procurement, informational
-- Date source attribution: Manufacturer Confirmed, Community Database, Not Available
-- Docker deployment with Chromium included
+eol-tool checks your hardware inventory against live manufacturer data sources and returns real end-of-life dates, end-of-support dates, and risk classifications. No hardcoded dates, no guesswork — every date is sourced from the manufacturer or a verified community database.
 
 ## Quick Start
 
-### Docker Hub (easiest)
+**Docker (recommended):**
 
 ```bash
-docker pull salmutt/eol-tool:latest
 docker run -d -p 8080:8080 --name eol-tool salmutt/eol-tool:latest
 ```
 
 Open http://localhost:8080
 
-### Docker Compose (from source)
+**From source:**
 
 ```bash
 git clone https://github.com/SalMutt/eol-tool.git
@@ -34,48 +22,70 @@ cd eol-tool
 docker compose up -d
 ```
 
-Open http://localhost:8080
-
-### Local
+**Local development:**
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
 pip install -e ".[api]"
 playwright install chromium
-```
-
-Start the web UI and API:
-
-```bash
 eol-tool serve --port 8080
 ```
 
-Or run a batch check:
+## How It Works
 
-```bash
-eol-tool check --input data/inventory.xlsx --output results.xlsx
+eol-tool queries manufacturer websites and APIs for real lifecycle data:
+
+| Source | Method | What It Returns |
+|--------|--------|----------------|
+| **Intel ARK** | Playwright scraper | Marketing Status, Launch Date, End of Servicing Date |
+| **Juniper EOL** | HTTP scraper | End of Life date, End of Support date per product family |
+| **Cisco bulletins** | Playwright scraper | End of Sale, End of SW Maintenance, Last Date of Support |
+| **endoflife.date** | REST API | Community-maintained lifecycle data for common products |
+
+For vendors without public EOL programs (Samsung, Seagate, WD, Kingston, Micron, SK Hynix, Toshiba, Dell, Supermicro), eol-tool classifies hardware by technology generation and product line. These vendors show "Not Available" for dates because no manufacturer date exists — the tool is honest about this rather than guessing.
+
+### Priority Chain
+
+When multiple data sources have information about a model, eol-tool picks the best result:
+
+1. **Manual overrides** — local CSV for site-specific corrections
+2. **Playwright scrapers** — real dates from Intel ARK, Cisco bulletins
+3. **HTTP scrapers** — real dates from Juniper EOL pages
+4. **endoflife.date API** — community-maintained dates
+5. **Vendor pattern rules** — classification without dates
+6. **Tech generation rules** — DDR3/4/5, CPU generation, SSD generation
+
+Dated results always beat dateless results, regardless of priority level.
+
+## Web Dashboard
+
+The web UI at http://localhost:8080 provides three workflows:
+
+**Single Model Lookup** — Type a model number and optional manufacturer to get instant results. No file upload required.
+
+**Bulk Upload** — Drag and drop an xlsx spreadsheet with your hardware inventory. If the spreadsheet contains raw inventory (Model, Manufacturer, Category columns), eol-tool processes it through all checkers and returns results. If it contains pre-processed results (with EOL Status already filled), it displays them directly.
+
+**Template Download** — Download a blank xlsx template with the correct column headers and example rows.
+
+### Dashboard Features
+
+- Collapsible manufacturer groups with model counts
+- Filter by EOL status, risk category, or manufacturer
+- Search across all models
+- Sort by name, count, EOL date, or risk level
+- Export filtered or full results as xlsx or csv
+- Date Source badges showing where each date came from
+
+## REST API
+
+```
+GET  /api/health                          Health check
+GET  /api/lookup?model=X&manufacturer=Y   Single model lookup
+POST /api/check                           Bulk xlsx upload and processing
+GET  /api/sources                         List data sources and cache status
 ```
 
-## Web UI
-
-Open http://localhost:8080 after starting the server.
-
-- **Single Model Lookup** — search any model without uploading a file
-- **Bulk Upload** — drag and drop an xlsx spreadsheet for batch analysis
-- **Dashboard** — filterable, sortable results grouped by manufacturer
-- **Export** — download filtered or full results as xlsx or csv
-
-## API Endpoints
-
-```
-GET  /api/health              Health check
-GET  /api/lookup?model=X      Single model lookup (manufacturer optional)
-POST /api/check               Upload xlsx for batch processing
-GET  /api/sources             List data sources and cache status
-```
-
-### Example
+**Example:**
 
 ```bash
 curl "http://localhost:8080/api/lookup?model=EX4300-48T&manufacturer=Juniper"
@@ -95,67 +105,84 @@ curl "http://localhost:8080/api/lookup?model=EX4300-48T&manufacturer=Juniper"
 }
 ```
 
-## CLI Commands
+## CLI
 
-```bash
-eol-tool check --input models.xlsx --output results.xlsx   # Batch EOL check
-eol-tool serve --port 8080                                  # Start web UI + API
-eol-tool update                                             # Refresh cached data from sources
-eol-tool update --source juniper                            # Refresh specific source
-eol-tool cache stats                                        # Show cache status
-eol-tool cache clear                                        # Clear all cached data
 ```
-
-## Data Sources
-
-| Source | Type | Coverage | Dates |
-|--------|------|----------|-------|
-| Intel ARK | Playwright scraper | Intel CPUs | Manufacturer Confirmed |
-| Juniper EOL pages | HTTP scraper | Juniper switches/firewalls | Manufacturer Confirmed |
-| Cisco EOL bulletins | Playwright scraper | Cisco firewalls/APs | Manufacturer Confirmed |
-| endoflife.date API | REST API | Intel, NVIDIA, others | Community Database |
-| Tech generation rules | Local | DDR3/4/5, CPU generations | Classification only |
-| Vendor pattern rules | Local | Samsung, Seagate, WD, Kingston, Micron | Classification only |
-
-Vendors without formal EOL programs (Samsung, Seagate, WD, Kingston, Micron, SK Hynix, Toshiba) are classified by technology generation but show "Not Available" for dates — because no manufacturer date exists.
+eol-tool check --input inventory.xlsx --output results.xlsx    Batch check
+eol-tool serve --port 8080                                      Start web UI + API
+eol-tool update                                                 Refresh all cached data
+eol-tool update --source juniper                                Refresh one source
+eol-tool cache stats                                            Show cache info
+eol-tool cache clear                                            Clear all caches
+eol-tool --version                                              Show version
+```
 
 ## Spreadsheet Format
 
-Input xlsx requires these columns:
+eol-tool accepts xlsx files with these columns:
 
-| Column | Required | Description |
-|--------|----------|-------------|
-| Model | Yes | Hardware model name or part number |
-| Manufacturer | Yes | Vendor name |
-| Category | Yes | Hardware type (cpu, switch, ssd, memory, etc) |
+| Column | Required | Example |
+|--------|----------|---------|
+| Model | Yes | EX4300-48T, EPYC 7413, PM893, R630 |
+| Manufacturer | Yes | Juniper, AMD, Samsung, Dell |
+| Category | Yes | switch, cpu, ssd, server, memory, nic, hdd |
+
+Download a pre-formatted template from the web UI.
+
+## Risk Categories
+
+eol-tool assigns risk levels to EOL hardware based on category:
+
+| Risk | Hardware Types | Meaning |
+|------|---------------|---------|
+| **Security** | Switches, firewalls, routers | No security patches — active vulnerability risk |
+| **Support** | Servers, CPUs, RAID controllers | No vendor support — failures have no repair path |
+| **Procurement** | SSDs, HDDs, memory, drives | No replacement parts — procurement planning needed |
+| **Informational** | Optics, coolers, cables | Low operational impact |
 
 ## Architecture
 
 ```
-Web UI → FastAPI → Check Pipeline
-                        ↓
-              ┌─────────┼──────────┐
-              ↓         ↓          ↓
-         Playwright   endoflife.date  Static Rules
-         Scrapers     API (httpx)    (no dates)
-              ↓
-       Headless Chromium
-              ↓
-  Intel ARK / Cisco / Juniper
-
-All results cached in SQLite (7-30 day TTL)
+                    +------------------+
+                    |     Web UI       |
+                    |  (React + XLSX)  |
+                    +--------+---------+
+                             |
+                    +--------v---------+
+                    |    FastAPI        |
+                    |  /api/lookup      |
+                    |  /api/check       |
+                    +--------+---------+
+                             |
+                    +--------v---------+
+                    |  Check Pipeline   |
+                    |  select_best()    |
+                    +--------+---------+
+                             |
+           +-----------------+------------------+
+           |                 |                  |
+  +--------v-------+ +------v-------+ +--------v--------+
+  |   Playwright    | |    httpx     | |  Static Rules    |
+  |   Scrapers      | |   Scrapers   | |  (no dates)      |
+  |                 | |              | |                   |
+  |  Intel ARK      | |  Juniper     | |  25+ vendor       |
+  |  Cisco EOL      | |  endoflife   | |  checkers         |
+  +--------+-------+ +------+-------+ +------------------+
+           |                 |
+  +--------v-----------------v-------+
+  |         SQLite Cache              |
+  |    7-30 day TTL per source        |
+  +----------------------------------+
 ```
 
-Priority chain: Manual overrides → Vendor scrapers → endoflife.date API → Static rules → Tech generation. Dated results always beat dateless results.
+## Supported Manufacturers
 
-## Development
+AMD, Arista, ASRock, ASUS, Broadcom, Brocade, Chenbro, Cisco, Corsair, Dell, Dynatron, EVGA, Gigabyte, HPE, Hitachi, IBM, Intel, Juniper, KIOXIA, Kingston, Mellanox, Micron, MSI, Mushkin, NVIDIA, OCZ, PNY, Samsung, SanDisk, Seagate, SK Hynix, Solidigm, Supermicro, Toshiba, Transcend, WD, Zotac
 
-```bash
-pip install -e ".[dev]"
-pytest -v
-ruff check src/ tests/
-```
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, adding new vendor checkers, and code style guidelines.
 
 ## License
 
-Apache 2.0
+[Apache 2.0](LICENSE)
