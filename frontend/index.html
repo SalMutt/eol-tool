@@ -19,6 +19,8 @@
   select, input { outline: none; }
   select option { background: #111114; color: #a1a1aa; }
   table { border-spacing: 0; }
+  @keyframes eol-pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+  @keyframes eol-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
 </style>
 </head>
 <body>
@@ -249,6 +251,9 @@ function App() {
   const [searchError, setSearchError] = useState("");
   const [searchModel, setSearchModel] = useState("");
   const [searchMfr, setSearchMfr] = useState("");
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [uploadProgress, setUploadProgress] = useState("");
 
   var parseFile = useCallback(function(file) {
     var reader = new FileReader();
@@ -260,27 +265,77 @@ function App() {
         }) || wb.SheetNames[0];
         var rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: "" });
 
-        var models = rows.map(function(r) {
-          return {
-            model: r["Model"] || r["model"] || "",
-            manufacturer: r["Manufacturer"] || r["manufacturer"] || "",
-            category: r["Category"] || r["category"] || "",
-            condition: r["Condition"] || r["condition"] || "",
-            status: (r["EOL Status"] || r["status"] || "unknown").toLowerCase().trim(),
-            eolDate: r["EOL Date"] || r["eol_date"] || "",
-            eosDate: r["EOS Date"] || r["eos_date"] || "",
-            confidence: parseInt(r["Confidence"] || r["confidence"] || "0") || 0,
-            source: r["Source"] || r["source"] || "",
-            notes: r["Notes"] || r["notes"] || "",
-            eolReason: r["EOL Reason"] || r["eol_reason"] || "none",
-            risk: (r["Risk Category"] || r["risk_category"] || "none").toLowerCase().trim(),
-            originalItem: r["Original_Item"] || r["original_item"] || "",
-            dateSource: r["Date Source"] || r["date_source"] || "none",
-          };
-        }).filter(function(m) { return m.model; });
+        var hasEOLStatus = rows.some(function(r) {
+          var s = (r["EOL Status"] || "").toLowerCase().trim();
+          return s === "eol" || s === "active" || s === "unknown" || s === "not_found";
+        });
 
-        setData({ models: models, fileName: file.name });
-        setExpanded({});
+        if (hasEOLStatus) {
+          // Pre-processed results — visualize directly
+          var models = rows.map(function(r) {
+            return {
+              model: r["Model"] || r["model"] || "",
+              manufacturer: r["Manufacturer"] || r["manufacturer"] || "",
+              category: r["Category"] || r["category"] || "",
+              condition: r["Condition"] || r["condition"] || "",
+              status: (r["EOL Status"] || r["status"] || "unknown").toLowerCase().trim(),
+              eolDate: r["EOL Date"] || r["eol_date"] || "",
+              eosDate: r["EOS Date"] || r["eos_date"] || "",
+              confidence: parseInt(r["Confidence"] || r["confidence"] || "0") || 0,
+              source: r["Source"] || r["source"] || "",
+              notes: r["Notes"] || r["notes"] || "",
+              eolReason: r["EOL Reason"] || r["eol_reason"] || "none",
+              risk: (r["Risk Category"] || r["risk_category"] || "none").toLowerCase().trim(),
+              originalItem: r["Original_Item"] || r["original_item"] || "",
+              dateSource: r["Date Source"] || r["date_source"] || "none",
+            };
+          }).filter(function(m) { return m.model; });
+          setData({ models: models, fileName: file.name });
+          setExpanded({});
+        } else {
+          // Raw inventory — send to API for EOL checking
+          var modelCount = rows.filter(function(r) { return r["Model"] || r["model"]; }).length;
+          setUploadLoading(true);
+          setUploadProgress("Processing " + modelCount + " models through EOL checkers...");
+          setUploadError("");
+          var formData = new FormData();
+          formData.append("file", file);
+          fetch(API_BASE + "/api/check", { method: "POST", body: formData })
+            .then(function(resp) {
+              if (!resp.ok) throw new Error("HTTP " + resp.status);
+              return resp.json();
+            })
+            .then(function(apiData) {
+              var results = apiData.results || apiData;
+              var models = (Array.isArray(results) ? results : []).map(function(r) {
+                return {
+                  model: r.model || r.Model || "",
+                  manufacturer: r.manufacturer || r.Manufacturer || "",
+                  category: r.category || r.Category || "",
+                  condition: r.condition || r.Condition || "",
+                  status: (r.status || r.eol_status || "unknown").toLowerCase().trim(),
+                  eolDate: r.eol_date || r.eolDate || "",
+                  eosDate: r.eos_date || r.eosDate || "",
+                  confidence: parseInt(r.confidence || "0") || 0,
+                  source: r.source || "",
+                  notes: r.notes || "",
+                  eolReason: r.eol_reason || r.eolReason || "none",
+                  risk: (r.risk_category || r.risk || "none").toLowerCase().trim(),
+                  originalItem: r.original_item || r.originalItem || "",
+                  dateSource: r.date_source || r.dateSource || "none",
+                };
+              }).filter(function(m) { return m.model; });
+              setData({ models: models, fileName: file.name });
+              setExpanded({});
+              setUploadLoading(false);
+              setUploadProgress("");
+            })
+            .catch(function() {
+              setUploadLoading(false);
+              setUploadProgress("");
+              setUploadError("API unavailable. For raw inventory processing, start the server with: eol-tool serve --port 8080. Or pre-process with: eol-tool check --input inventory.xlsx --output results.xlsx");
+            });
+        }
       } catch (err) {
         alert("Failed to parse file: " + err.message);
       }
@@ -500,6 +555,22 @@ function App() {
     if (ev.key === "Enter") handleSearch();
   }, [handleSearch]);
 
+  // Processing screen — shown while API is checking raw inventory
+  if (uploadLoading) {
+    return e("div", {
+      style: { minHeight: "100vh", background: "#08080b", display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 20px" },
+    },
+      e("div", { style: { textAlign: "center", maxWidth: 480 } },
+        e("div", { style: { fontSize: 48, marginBottom: 16 } }, "\u2699\uFE0F"),
+        e("h2", { style: { fontSize: 18, fontWeight: 700, color: "#e4e4e7", fontFamily: mono, marginBottom: 8 } }, uploadProgress),
+        e("p", { style: { color: "#71717a", fontSize: 13, marginBottom: 24 } }, "This may take a moment depending on the number of models."),
+        e("div", { style: { width: 240, height: 4, background: "#1e1e24", borderRadius: 2, overflow: "hidden", margin: "0 auto" } },
+          e("div", { style: { height: "100%", width: "40%", background: "#3b82f6", borderRadius: 2, animation: "eol-slide 1.5s ease-in-out infinite" } }),
+        ),
+      ),
+    );
+  }
+
   // Upload screen
   if (!data) {
     var colStyle = { padding: "6px 10px", borderBottom: "1px solid #1e1e24", fontSize: 12, fontFamily: mono };
@@ -695,6 +766,12 @@ function App() {
           e("p", { style: { color: "#71717a", fontSize: 14, lineHeight: 1.6, marginBottom: 4 } }, "Drop your EOL results spreadsheet here or click to browse."),
           e("p", { style: { color: "#3a3a42", fontSize: 12, fontFamily: mono } }, "Accepts .xlsx or .xls files"),
         ),
+        e("p", { style: { textAlign: "center", color: "#52525b", fontSize: 11, marginTop: -16, marginBottom: 16, lineHeight: 1.5 } },
+          "Upload pre-processed results for instant viewing, or raw inventory for live EOL checking (requires API server)"
+        ),
+        uploadError ? e("div", {
+          style: { padding: "12px 16px", background: "#2d1215", border: "1px solid #6b2128", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "#ef4444", lineHeight: 1.6, fontFamily: mono },
+        }, uploadError) : null,
 
         // SECTION 4: Format reference
         e("div", {
