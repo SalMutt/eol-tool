@@ -10,6 +10,8 @@ from fastapi import FastAPI, File, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from eol_tool import __version__
+
 from .cache import ResultCache
 from .check_pipeline import select_best_result
 from .manufacturer_corrections import apply_manufacturer_corrections
@@ -20,7 +22,7 @@ from .registry import get_checker, get_checkers, list_checkers
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="EOL Tool API", version="2.0.0")
+app = FastAPI(title="EOL Tool API", version=__version__)
 
 app.add_middleware(
     CORSMiddleware,
@@ -192,7 +194,7 @@ async def _run_check_pipeline(
 @app.get("/api/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "ok", "version": "2.0.0"}
+    return {"status": "ok", "version": __version__}
 
 
 @app.get("/api/lookup")

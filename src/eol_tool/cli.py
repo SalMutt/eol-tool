@@ -7,6 +7,8 @@ from pathlib import Path
 
 import click
 
+from eol_tool import __version__
+
 from .manufacturer_corrections import apply_manufacturer_corrections
 from .models import EOLResult, EOLStatus, HardwareModel, RiskCategory
 from .reader import read_models, write_results
@@ -23,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 @click.group()
+@click.version_option(version=__version__)
 def cli():
     """EOL Tool - Check end-of-life status for hardware models."""
 
