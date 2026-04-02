@@ -118,7 +118,11 @@ def read_models(path: Path) -> list[HardwareModel]:
     return models
 
 
-def write_results(results: list[EOLResult], path: Path) -> None:
+def write_results(
+    results: list[EOLResult],
+    path: Path,
+    filtered_rows: list[dict] | None = None,
+) -> None:
     """Write EOL check results to an xlsx file with formatting."""
     wb = openpyxl.Workbook()
 
@@ -242,6 +246,23 @@ def write_results(results: list[EOLResult], path: Path) -> None:
     ws_summary.column_dimensions["A"].width = 25
     for ci in range(2, len(statuses) + 2):
         ws_summary.column_dimensions[get_column_letter(ci)].width = 16
+
+    # --- Filtered sheet (optional) ---
+    if filtered_rows:
+        ws_filtered = wb.create_sheet("Filtered")
+        filtered_headers = ["Model", "Manufacturer", "Reason"]
+        for col, name in enumerate(filtered_headers, start=1):
+            cell = ws_filtered.cell(row=1, column=col, value=name)
+            cell.font = _HEADER_FONT
+            cell.fill = _HEADER_FILL
+            cell.alignment = Alignment(horizontal="center")
+        for row_idx, f in enumerate(filtered_rows, start=2):
+            ws_filtered.cell(row=row_idx, column=1, value=f["model"])
+            ws_filtered.cell(row=row_idx, column=2, value=f["manufacturer"])
+            ws_filtered.cell(row=row_idx, column=3, value=f["reason"])
+        ws_filtered.column_dimensions["A"].width = 30
+        ws_filtered.column_dimensions["B"].width = 20
+        ws_filtered.column_dimensions["C"].width = 30
 
     path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(path)

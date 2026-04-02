@@ -237,7 +237,345 @@ function downloadTemplate(format) {
   }
 }
 
+function OverridesPage({ onBack }) {
+  const [overrides, setOverrides] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [sortCol, setSortCol] = useState("model");
+  const [sortAsc, setSortAsc] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingRow, setEditingRow] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [formData, setFormData] = useState({ model: "", manufacturer: "", status: "eol", risk_category: "none", eol_reason: "manual_override", eol_date: "", eos_date: "", source_url: "", notes: "" });
+  const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [importSummary, setImportSummary] = useState(null);
+  const importRef = useRef(null);
+
+  var fetchOverrides = useCallback(function() {
+    setLoading(true);
+    fetch(API_BASE + "/api/overrides")
+      .then(function(r) { return r.json(); })
+      .then(function(data) { setOverrides(data); setLoading(false); setError(""); })
+      .catch(function() { setError("Failed to load overrides. Is the API server running?"); setLoading(false); });
+  }, []);
+
+  React.useEffect(function() { fetchOverrides(); }, [fetchOverrides]);
+
+  var handleSort = useCallback(function(col) {
+    if (sortCol === col) setSortAsc(!sortAsc);
+    else { setSortCol(col); setSortAsc(true); }
+  }, [sortCol, sortAsc]);
+
+  var filtered = useMemo(function() {
+    var list = overrides;
+    if (search) {
+      var q = search.toLowerCase();
+      list = list.filter(function(o) {
+        return o.model.toLowerCase().indexOf(q) !== -1 ||
+          o.manufacturer.toLowerCase().indexOf(q) !== -1 ||
+          (o.notes || "").toLowerCase().indexOf(q) !== -1;
+      });
+    }
+    list = list.slice().sort(function(a, b) {
+      var va = (a[sortCol] || "").toLowerCase();
+      var vb = (b[sortCol] || "").toLowerCase();
+      if (va < vb) return sortAsc ? -1 : 1;
+      if (va > vb) return sortAsc ? 1 : -1;
+      return 0;
+    });
+    return list;
+  }, [overrides, search, sortCol, sortAsc]);
+
+  var openAdd = useCallback(function() {
+    setEditingRow(null);
+    setFormData({ model: "", manufacturer: "", status: "eol", risk_category: "none", eol_reason: "manual_override", eol_date: "", eos_date: "", source_url: "", notes: "" });
+    setFormError("");
+    setShowForm(true);
+  }, []);
+
+  var openEdit = useCallback(function(row) {
+    setEditingRow(row);
+    setFormData({ model: row.model, manufacturer: row.manufacturer, status: row.status || "eol", risk_category: row.risk_category || "none", eol_reason: row.eol_reason || "manual_override", eol_date: row.eol_date || "", eos_date: row.eos_date || "", source_url: row.source_url || "", notes: row.notes || "" });
+    setFormError("");
+    setShowForm(true);
+  }, []);
+
+  var handleSave = useCallback(function() {
+    if (!formData.model.trim()) { setFormError("Model is required"); return; }
+    setSaving(true);
+    setFormError("");
+    var method = editingRow ? "PUT" : "POST";
+    fetch(API_BASE + "/api/overrides", {
+      method: method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(formData),
+    })
+      .then(function(r) {
+        if (r.status === 409) throw new Error("An override for this model+manufacturer already exists");
+        if (r.status === 422) return r.json().then(function(d) { throw new Error(d.detail ? (typeof d.detail === "string" ? d.detail : d.detail.map(function(e) { return e.msg; }).join(", ")) : "Validation error"); });
+        if (r.status === 404) throw new Error("Override not found");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function() { setShowForm(false); setSaving(false); fetchOverrides(); })
+      .catch(function(err) { setFormError(err.message); setSaving(false); });
+  }, [formData, editingRow, fetchOverrides]);
+
+  var handleDelete = useCallback(function() {
+    if (!deleteTarget) return;
+    fetch(API_BASE + "/api/overrides?model=" + encodeURIComponent(deleteTarget.model) + "&manufacturer=" + encodeURIComponent(deleteTarget.manufacturer || ""), { method: "DELETE" })
+      .then(function(r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        setDeleteTarget(null);
+        fetchOverrides();
+      })
+      .catch(function() { setDeleteTarget(null); });
+  }, [deleteTarget, fetchOverrides]);
+
+  var handleExport = useCallback(function() {
+    window.location.href = API_BASE + "/api/overrides/export";
+  }, []);
+
+  var handleImportFile = useCallback(function(ev) {
+    var file = ev.target.files[0];
+    if (!file) return;
+    var fd = new FormData();
+    fd.append("file", file);
+    setImportSummary(null);
+    fetch(API_BASE + "/api/overrides/import", { method: "POST", body: fd })
+      .then(function(r) { return r.json(); })
+      .then(function(data) { setImportSummary(data); fetchOverrides(); })
+      .catch(function() { setImportSummary({ error: "Import failed" }); });
+    ev.target.value = "";
+  }, [fetchOverrides]);
+
+  var setField = function(field) {
+    return function(ev) {
+      setFormData(function(prev) { var next = Object.assign({}, prev); next[field] = ev.target.value; return next; });
+    };
+  };
+
+  var inputStyle = { width: "100%", padding: "8px 12px", background: "#111114", border: "1px solid #1e1e24", borderRadius: 6, color: "#e4e4e7", fontSize: 13, fontFamily: mono };
+  var selectStyle = Object.assign({}, inputStyle, { cursor: "pointer" });
+  var labelStyle = { fontSize: 11, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: mono, marginBottom: 4, display: "block" };
+
+  var thStyle = function(col) {
+    return {
+      padding: "8px 12px", textAlign: "left", color: sortCol === col ? "#e4e4e7" : "#52525b",
+      fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em",
+      fontFamily: mono, fontWeight: 600, borderBottom: "1px solid #1e1e24",
+      cursor: "pointer", userSelect: "none", background: "#0a0a0d",
+    };
+  };
+
+  var statusColors = { eol: "#ef4444", active: "#22c55e", unknown: "#ca8a04" };
+
+  // Main render
+  return e("div", { style: { minHeight: "100vh", background: "#08080b", color: "#e4e4e7" } },
+    e("div", { style: { maxWidth: 1200, margin: "0 auto", padding: "24px 20px" } },
+
+      // Header
+      e("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 } },
+        e("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
+          e("button", {
+            onClick: onBack,
+            style: { padding: "6px 12px", background: "#1e1e24", border: "none", borderRadius: 6, color: "#a1a1aa", fontSize: 12, cursor: "pointer", fontFamily: mono },
+          }, "\u2190 Back"),
+          e("h1", { style: { fontSize: 20, fontWeight: 700, fontFamily: mono, margin: 0 } }, "Manual Overrides"),
+        ),
+        e("div", { style: { display: "flex", gap: 8 } },
+          e("button", { onClick: openAdd, style: { padding: "8px 16px", background: "#3b82f6", border: "none", borderRadius: 6, color: "white", fontSize: 12, cursor: "pointer", fontFamily: mono, fontWeight: 600 } }, "+ Add Override"),
+        ),
+      ),
+
+      // Help text
+      e("div", { style: { background: "#0c1929", border: "1px solid #1d3a5c", borderRadius: 8, padding: "12px 16px", marginBottom: 16, fontSize: 12, color: "#3b82f6", lineHeight: 1.6 } },
+        e("div", { style: { fontWeight: 600, marginBottom: 4 } }, "How manual overrides work:"),
+        e("div", { style: { color: "#6b9bd2" } },
+          "\u2022 Manual overrides are checked last in the classification chain", e("br"),
+          "\u2022 They catch models that automated checkers cannot classify", e("br"),
+          "\u2022 Model matching is case-insensitive and supports partial matches",
+        ),
+      ),
+
+      // Import/Export
+      e("div", { style: { display: "flex", gap: 8, marginBottom: 16, alignItems: "center", flexWrap: "wrap" } },
+        e("button", { onClick: handleExport, style: { padding: "8px 16px", background: "#0d2818", border: "1px solid #1a5632", borderRadius: 6, color: "#22c55e", fontSize: 12, cursor: "pointer", fontFamily: mono, fontWeight: 600 } }, "\u2B07 Export CSV"),
+        e("button", {
+          onClick: function() { importRef.current && importRef.current.click(); },
+          style: { padding: "8px 16px", background: "#0c1929", border: "1px solid #1d3a5c", borderRadius: 6, color: "#3b82f6", fontSize: 12, cursor: "pointer", fontFamily: mono, fontWeight: 600 },
+        }, "\u2B06 Import CSV"),
+        e("input", { ref: importRef, type: "file", accept: ".csv", onChange: handleImportFile, style: { display: "none" } }),
+        importSummary && !importSummary.error ? e("span", { style: { fontSize: 12, color: "#22c55e", fontFamily: mono } }, "Added " + importSummary.added + ", Updated " + importSummary.updated + ", Unchanged " + importSummary.unchanged) : null,
+        importSummary && importSummary.error ? e("span", { style: { fontSize: 12, color: "#ef4444", fontFamily: mono } }, importSummary.error) : null,
+      ),
+
+      // Search
+      e("div", { style: { marginBottom: 16 } },
+        e("input", {
+          type: "text", placeholder: "Search overrides...", value: search,
+          onChange: function(ev) { setSearch(ev.target.value); },
+          style: { width: "100%", maxWidth: 400, padding: "8px 12px", background: "#111114", border: "1px solid #1e1e24", borderRadius: 6, color: "#e4e4e7", fontSize: 13, fontFamily: mono },
+        }),
+      ),
+
+      // Error
+      error ? e("div", { style: { padding: "12px 16px", background: "#2d1215", border: "1px solid #6b2128", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "#ef4444", fontFamily: mono } }, error) : null,
+
+      // Loading
+      loading ? e("div", { style: { textAlign: "center", padding: 48, color: "#52525b" } }, "Loading overrides...") : null,
+
+      // Table
+      !loading && filtered.length === 0 ? e("div", { style: { textAlign: "center", padding: 48, color: "#52525b", fontSize: 14 } }, overrides.length === 0 ? "No manual overrides configured yet. Click \"+ Add Override\" to create one." : "No overrides match the search.") : null,
+
+      !loading && filtered.length > 0 ? e("div", { style: { border: "1px solid #1e1e24", borderRadius: 8, overflow: "auto" } },
+        e("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
+          e("thead", null,
+            e("tr", null,
+              [["model", "Model"], ["manufacturer", "Manufacturer"], ["status", "Status"], ["risk_category", "Risk"], ["eol_reason", "EOL Reason"], ["notes", "Notes"]].map(function(h) {
+                return e("th", { key: h[0], onClick: function() { handleSort(h[0]); }, style: thStyle(h[0]) },
+                  h[1], sortCol === h[0] ? (sortAsc ? " \u25B2" : " \u25BC") : ""
+                );
+              }),
+              e("th", { style: { padding: "8px 12px", textAlign: "right", color: "#52525b", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: mono, fontWeight: 600, borderBottom: "1px solid #1e1e24", background: "#0a0a0d" } }, "Actions"),
+            ),
+          ),
+          e("tbody", null,
+            filtered.map(function(o, i) {
+              return e("tr", {
+                key: o.model + "|" + o.manufacturer + "|" + i,
+                style: { background: i % 2 === 0 ? "#0c0c0f" : "#0e0e12", borderBottom: "1px solid #141418" },
+                onMouseEnter: function(ev) { ev.currentTarget.style.background = "#14141a"; },
+                onMouseLeave: function(ev) { ev.currentTarget.style.background = i % 2 === 0 ? "#0c0c0f" : "#0e0e12"; },
+              },
+                e("td", { style: { padding: "8px 12px", color: "#d4d4d8", fontFamily: mono, fontSize: 12 } }, o.model),
+                e("td", { style: { padding: "8px 12px", color: "#71717a", fontSize: 12 } }, o.manufacturer || "\u2014"),
+                e("td", { style: { padding: "8px 12px" } },
+                  e("span", { style: { padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600, fontFamily: mono, textTransform: "uppercase", color: statusColors[o.status] || "#ca8a04", background: o.status === "eol" ? "#2d1215" : o.status === "active" ? "#0d2818" : "#1e1b16" } }, o.status || "unknown")
+                ),
+                e("td", { style: { padding: "8px 12px" } }, e(RiskBadge, { risk: o.risk_category })),
+                e("td", { style: { padding: "8px 12px", color: "#71717a", fontSize: 11, fontFamily: mono } }, o.eol_reason && o.eol_reason !== "none" ? o.eol_reason.replace(/_/g, " ") : "\u2014"),
+                e("td", { style: { padding: "8px 12px", color: "#52525b", fontSize: 11, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: o.notes }, o.notes || "\u2014"),
+                e("td", { style: { padding: "8px 12px", textAlign: "right", whiteSpace: "nowrap" } },
+                  e("button", {
+                    onClick: function() { openEdit(o); },
+                    style: { padding: "4px 10px", background: "#0c1929", border: "1px solid #1d3a5c", borderRadius: 4, color: "#3b82f6", fontSize: 11, cursor: "pointer", fontFamily: mono, marginRight: 4 },
+                  }, "Edit"),
+                  e("button", {
+                    onClick: function() { setDeleteTarget(o); },
+                    style: { padding: "4px 10px", background: "#2d1215", border: "1px solid #6b2128", borderRadius: 4, color: "#ef4444", fontSize: 11, cursor: "pointer", fontFamily: mono },
+                  }, "Delete"),
+                ),
+              );
+            }),
+          ),
+        ),
+      ) : null,
+
+      e("div", { style: { marginTop: 8, fontSize: 12, color: "#52525b", fontFamily: mono } }, filtered.length + " override" + (filtered.length !== 1 ? "s" : "")),
+
+      // Footer
+      e("div", { style: { marginTop: 32, paddingTop: 16, borderTop: "1px solid #1e1e24", textAlign: "center" } },
+        e("p", { style: { fontSize: 11, color: "#3a3a42", fontFamily: mono } }, "eol-tool \u2014 Hardware End-of-Life Checker"),
+      ),
+    ),
+
+    // Form Modal
+    showForm ? e("div", {
+      onClick: function(ev) { if (ev.target === ev.currentTarget) setShowForm(false); },
+      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 },
+    },
+      e("div", { style: { background: "#111114", border: "1px solid #1e1e24", borderRadius: 12, padding: 24, width: "100%", maxWidth: 520, maxHeight: "90vh", overflowY: "auto" } },
+        e("h2", { style: { fontSize: 16, fontWeight: 700, fontFamily: mono, marginBottom: 16 } }, editingRow ? "Edit Override" : "Add Override"),
+        formError ? e("div", { style: { padding: "8px 12px", background: "#2d1215", border: "1px solid #6b2128", borderRadius: 6, marginBottom: 12, fontSize: 12, color: "#ef4444" } }, formError) : null,
+
+        e("div", { style: { marginBottom: 12 } },
+          e("label", { style: labelStyle }, "Model *"),
+          e("input", { type: "text", value: formData.model, onChange: setField("model"), disabled: !!editingRow, style: Object.assign({}, inputStyle, editingRow ? { opacity: 0.5 } : {}) }),
+        ),
+        e("div", { style: { marginBottom: 12 } },
+          e("label", { style: labelStyle }, "Manufacturer"),
+          e("input", { type: "text", value: formData.manufacturer, onChange: setField("manufacturer"), disabled: !!editingRow, style: Object.assign({}, inputStyle, editingRow ? { opacity: 0.5 } : {}), placeholder: "Empty = matches any manufacturer" }),
+        ),
+        e("div", { style: { display: "flex", gap: 12, marginBottom: 12 } },
+          e("div", { style: { flex: 1 } },
+            e("label", { style: labelStyle }, "Status"),
+            e("select", { value: formData.status, onChange: setField("status"), style: selectStyle },
+              e("option", { value: "eol" }, "EOL"),
+              e("option", { value: "active" }, "Active"),
+              e("option", { value: "unknown" }, "Unknown"),
+            ),
+          ),
+          e("div", { style: { flex: 1 } },
+            e("label", { style: labelStyle }, "Risk Category"),
+            e("select", { value: formData.risk_category, onChange: setField("risk_category"), style: selectStyle },
+              e("option", { value: "security" }, "Security"),
+              e("option", { value: "support" }, "Support"),
+              e("option", { value: "procurement" }, "Procurement"),
+              e("option", { value: "informational" }, "Informational"),
+              e("option", { value: "none" }, "None"),
+            ),
+          ),
+        ),
+        e("div", { style: { marginBottom: 12 } },
+          e("label", { style: labelStyle }, "EOL Reason"),
+          e("select", { value: formData.eol_reason, onChange: setField("eol_reason"), style: selectStyle },
+            e("option", { value: "manufacturer_declared" }, "Manufacturer Declared"),
+            e("option", { value: "technology_generation" }, "Technology Generation"),
+            e("option", { value: "product_discontinued" }, "Product Discontinued"),
+            e("option", { value: "vendor_acquired" }, "Vendor Acquired"),
+            e("option", { value: "community_data" }, "Community Data"),
+            e("option", { value: "manual_override" }, "Manual Override"),
+            e("option", { value: "none" }, "None"),
+          ),
+        ),
+        e("div", { style: { display: "flex", gap: 12, marginBottom: 12 } },
+          e("div", { style: { flex: 1 } },
+            e("label", { style: labelStyle }, "EOL Date"),
+            e("input", { type: "date", value: formData.eol_date, onChange: setField("eol_date"), style: inputStyle }),
+          ),
+          e("div", { style: { flex: 1 } },
+            e("label", { style: labelStyle }, "EOS Date"),
+            e("input", { type: "date", value: formData.eos_date, onChange: setField("eos_date"), style: inputStyle }),
+          ),
+        ),
+        e("div", { style: { marginBottom: 12 } },
+          e("label", { style: labelStyle }, "Source URL"),
+          e("input", { type: "text", value: formData.source_url, onChange: setField("source_url"), style: inputStyle, placeholder: "https://..." }),
+        ),
+        e("div", { style: { marginBottom: 16 } },
+          e("label", { style: labelStyle }, "Notes"),
+          e("input", { type: "text", value: formData.notes, onChange: setField("notes"), style: inputStyle }),
+        ),
+        e("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end" } },
+          e("button", { onClick: function() { setShowForm(false); }, style: { padding: "8px 16px", background: "#1e1e24", border: "none", borderRadius: 6, color: "#a1a1aa", fontSize: 12, cursor: "pointer", fontFamily: mono } }, "Cancel"),
+          e("button", { onClick: handleSave, disabled: saving, style: { padding: "8px 16px", background: "#3b82f6", border: "none", borderRadius: 6, color: "white", fontSize: 12, cursor: saving ? "not-allowed" : "pointer", fontFamily: mono, fontWeight: 600, opacity: saving ? 0.7 : 1 } }, saving ? "Saving..." : "Save"),
+        ),
+      ),
+    ) : null,
+
+    // Delete confirmation
+    deleteTarget ? e("div", {
+      onClick: function(ev) { if (ev.target === ev.currentTarget) setDeleteTarget(null); },
+      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 },
+    },
+      e("div", { style: { background: "#111114", border: "1px solid #6b2128", borderRadius: 12, padding: 24, width: "100%", maxWidth: 400 } },
+        e("h2", { style: { fontSize: 16, fontWeight: 700, fontFamily: mono, color: "#ef4444", marginBottom: 12 } }, "Delete Override?"),
+        e("p", { style: { fontSize: 13, color: "#a1a1aa", marginBottom: 4 } }, "Are you sure you want to delete the override for:"),
+        e("p", { style: { fontSize: 14, fontWeight: 600, fontFamily: mono, color: "#e4e4e7", marginBottom: 16 } }, deleteTarget.model + (deleteTarget.manufacturer ? " (" + deleteTarget.manufacturer + ")" : "")),
+        e("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end" } },
+          e("button", { onClick: function() { setDeleteTarget(null); }, style: { padding: "8px 16px", background: "#1e1e24", border: "none", borderRadius: 6, color: "#a1a1aa", fontSize: 12, cursor: "pointer", fontFamily: mono } }, "Cancel"),
+          e("button", { onClick: handleDelete, style: { padding: "8px 16px", background: "#ef4444", border: "none", borderRadius: 6, color: "white", fontSize: 12, cursor: "pointer", fontFamily: mono, fontWeight: 600 } }, "Delete"),
+        ),
+      ),
+    ) : null,
+  );
+}
+
 function App() {
+  const [page, setPage] = useState("main");
   const [data, setData] = useState(null);
   const [expanded, setExpanded] = useState({});
   const [statusFilter, setStatusFilter] = useState("all");
@@ -254,6 +592,8 @@ function App() {
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [uploadProgress, setUploadProgress] = useState("");
+
+  if (page === "overrides") return e(OverridesPage, { onBack: function() { setPage("main"); } });
 
   var parseFile = useCallback(function(file) {
     var reader = new FileReader();
@@ -857,6 +1197,16 @@ function App() {
           ),
         ),
 
+        // Manual Overrides link
+        e("div", { style: { marginTop: 16, textAlign: "center" } },
+          e("button", {
+            onClick: function() { setPage("overrides"); },
+            style: { padding: "8px 16px", background: "transparent", border: "1px solid #1e1e24", borderRadius: 6, color: "#71717a", fontSize: 12, cursor: "pointer", fontFamily: mono },
+            onMouseEnter: function(ev) { ev.currentTarget.style.borderColor = "#3b82f6"; ev.currentTarget.style.color = "#3b82f6"; },
+            onMouseLeave: function(ev) { ev.currentTarget.style.borderColor = "#1e1e24"; ev.currentTarget.style.color = "#71717a"; },
+          }, "Manage Manual Overrides"),
+        ),
+
         // Footer
         e("div", { style: { marginTop: 24, textAlign: "center" } },
           e("p", { style: { fontSize: 11, color: "#3a3a42", fontFamily: mono } }, "eol-tool \u2014 Hardware End-of-Life Checker"),
@@ -903,6 +1253,15 @@ function App() {
             onMouseEnter: function(ev) { ev.currentTarget.style.background = "#103320"; },
             onMouseLeave: function(ev) { ev.currentTarget.style.background = "#0d2818"; },
           }, "\u2B07 Export All (" + stats.total + ")"),
+          e("button", {
+            onClick: function() { setPage("overrides"); },
+            style: {
+              padding: "8px 16px", background: "transparent", border: "1px solid #1e1e24",
+              borderRadius: 6, color: "#71717a", fontSize: 12, cursor: "pointer", fontFamily: mono,
+            },
+            onMouseEnter: function(ev) { ev.currentTarget.style.borderColor = "#3b82f6"; ev.currentTarget.style.color = "#3b82f6"; },
+            onMouseLeave: function(ev) { ev.currentTarget.style.borderColor = "#1e1e24"; ev.currentTarget.style.color = "#71717a"; },
+          }, "Manual Overrides"),
           e("button", {
             onClick: function() { setData(null); },
             style: {

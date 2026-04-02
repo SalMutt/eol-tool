@@ -1,0 +1,65 @@
+Read src/eol_tool/checkers/tech_generation.py and src/eol_tool/checkers/manual.py and src/eol_tool/models.py to understand the current classification system.
+
+GOAL: Generic white-label optics (SFP, QSFP, XFP, CFP transceivers) with no manufacturer should be classified as ACTIVE with risk_category NONE. These are commodity items — interchangeable, always available from multiple vendors, and never go EOL in any meaningful sense. They should NOT remain as UNKNOWN.
+
+STEP 1 — Create src/eol_tool/checkers/generic_optics.py
+
+A new checker that handles optics with no manufacturer (or manufacturer set to a generic/unknown value).
+
+class GenericOpticsChecker with BaseChecker:
+    manufacturer_name = "__generic_optics__"
+
+This checker should:
+- Activate when manufacturer is empty, blank, "unknown", or "generic"
+- Match models that look like optics transceivers using these patterns:
+  - Contains SFP, QSFP, QSFPP, XFP, or CFP anywhere in the model string
+  - Contains transceiver speed indicators: 1G, 10G, 25G, 40G, 50G, 100G, 400G
+  - Contains fiber/copper indicators: SR, LR, ER, ZR, SR4, LR4, PLR4, UNIV, BASE-T, COPPER
+  - Contains DWDM channel indicators: DW followed by digits, or C followed by 1-2 digits then space
+  - Contains converter indicators: CVR-QSFP
+- Return status ACTIVE with:
+  - eol_reason: none (commodity items dont have EOL)
+  - risk_category: NONE
+  - confidence: 80
+  - source_name: "generic-optics-classifier"
+  - notes: "commodity-transceiver-always-available" for standard optics
+  - notes: "dwdm-optic-commodity" for DWDM channel optics
+
+For models that look like optics but WITH a known manufacturer (like Juniper JNP-QSFP or HPE branded optics), return NOT_FOUND so the vendor-specific checker handles them.
+
+STEP 2 — Register in the checker priority chain
+
+This checker should run AFTER vendor-specific checkers but BEFORE tech_generation. The priority order should be:
+1. Vendor-specific checkers
+2. Generic optics checker (new)
+3. Tech generation checker
+4. endoflife.date fallback
+5. Manual overrides
+
+Find where the checker chain is assembled and insert generic_optics in the correct position. The checker needs to be discoverable by the registry.
+
+STEP 3 — These specific models must all classify as ACTIVE after this change:
+
+QSFP-SR4-40G, QSFP-40G-UNIV, QSFP-LR4-40G, SFP-10G-T, SFP-1GE-LX, SFP-GE-T-L,
+QSFP-100G-SR4, SFP-10GZR-55, CVR-QSFP-SFP10G, QSFP-40G-LR4-ENC, QSFP-PLR4-40G,
+QSFP-LR4-100G, QSFPP-40GBASE-SR4, 100GBASE-SR4 QSFP28, 10G SFP+ LR, 10G SFP+ SR BR,
+10G XFP LR, 10G XFP SR-85, 10GBASE- SR SFP+ 850NM, 10GBASE-T SFP+ COPPER RJ-45,
+SFP-GB-GE-T, SFP1G-LX-31, CFP-GEN2-100GBASE-LR4, C30 SFPP-10G-DW30,
+C31 SFPP-10G-DW31, C32 SFPP-10G-DW32, QSFP-SR4-40G-AI, QSFP-SR4-50G-AI
+
+STEP 4 — Tests in tests/test_checkers/test_generic_optics.py
+
+- Each of the 28 models listed above must be tested individually and return ACTIVE
+- Optics WITH a real manufacturer return NOT_FOUND (test with "JNP-QSFP-4X10GE-SR" manufacturer "Juniper")
+- Non-optic models return NOT_FOUND (test with "XEON E5-2683V4" no manufacturer)
+- DWDM channel optics classified correctly
+- Converter modules (CVR-) classified correctly
+- Confidence is 80
+- source_name is "generic-optics-classifier"
+- At least 35 test cases total
+
+STEP 5 — Also handle "OPTICS:FS BOX" — this should be caught by the input filter from prompt 01 as junk (its a box label not an optic). If input_filter.py exists, add "FS BOX" to the junk patterns. If it does not exist yet, add a test that documents this as expected junk.
+
+Run pytest. All existing tests must still pass. New tests must pass. ruff check clean.
+
+Do not mention Claude, Claude Code, Ralph, or any AI assistant in code, comments, commit messages, documentation, or any file. No co-author trailers in commits.

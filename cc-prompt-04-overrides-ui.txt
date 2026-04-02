@@ -1,0 +1,109 @@
+Read all files in src/eol_tool/ focusing on the FastAPI backend (look for app.py, main.py, api.py, or similar), the React frontend (look for frontend/ or ui/ directory), and src/eol_tool/checkers/manual.py. Also read data/manual_overrides.csv to understand the current format.
+
+GOAL: Add manual override management to both the API and the frontend UI. Users should be able to view, add, edit, and delete manual overrides through the web interface. The CSV file remains the source of truth — the API reads and writes it directly.
+
+PART 1 — API ENDPOINTS
+
+Add these endpoints to the FastAPI backend:
+
+GET /api/overrides
+  Returns all manual overrides as a JSON array.
+  Each override has: model, manufacturer, status, eol_reason, risk_category, eol_date, eos_date, source_url, notes
+  Also return a count of how many models in the last run matched each override (if tracking data is available, otherwise skip this)
+
+POST /api/overrides
+  Add a new override. Request body is a JSON object with the same fields.
+  Validate:
+  - model is required and non-empty
+  - status must be one of: eol, active, unknown
+  - eol_reason must be one of the valid enum values or empty
+  - risk_category must be one of the valid enum values or empty
+  - eol_date and eos_date if provided must be valid date strings (YYYY-MM-DD)
+  - Do not allow duplicate model+manufacturer combinations
+  Write the new row to data/manual_overrides.csv
+  Return the created override with 201 status
+
+PUT /api/overrides
+  Update an existing override. Identify by model+manufacturer combination.
+  Same validation as POST.
+  Rewrite the CSV with the updated row.
+  Return 404 if the override does not exist.
+
+DELETE /api/overrides
+  Delete an override. Request body or query params: model and manufacturer.
+  Rewrite the CSV without the deleted row.
+  Return 404 if the override does not exist.
+
+GET /api/overrides/export
+  Return the raw CSV file as a download with Content-Type text/csv and Content-Disposition attachment
+
+POST /api/overrides/import
+  Accept a CSV file upload. Parse it and merge with existing overrides.
+  For duplicates (same model+manufacturer), the uploaded version wins.
+  Return a summary: added count, updated count, unchanged count.
+
+Implementation notes:
+- Use a file lock or atomic write pattern when modifying the CSV to prevent corruption from concurrent requests
+- Read/write using Python csv module, not pandas (keep dependencies minimal)
+- The CSV columns must match what manual.py expects
+
+PART 2 — FRONTEND UI
+
+Add a "Manual Overrides" page or section to the React frontend. It should be accessible from the main navigation.
+
+The page has:
+1. A table showing all current overrides with columns: Model, Manufacturer, Status, Risk Category, EOL Reason, Notes
+   - Status column uses color coding: red for EOL, green for ACTIVE, gray for UNKNOWN
+   - Each row has Edit and Delete buttons
+   - Table is sortable by any column
+   - Table has a search/filter input at the top
+
+2. An "Add Override" button that opens a form (modal or inline) with:
+   - Model (text input, required)
+   - Manufacturer (text input, optional — empty means matches any manufacturer)
+   - Status (dropdown: EOL, Active, Unknown)
+   - Risk Category (dropdown: Security, Support, Procurement, Informational, None)
+   - EOL Reason (dropdown: Manufacturer Declared, Technology Generation, Product Discontinued, Vendor Acquired, Community Data, Manual Override, None)
+   - EOL Date (date picker, optional)
+   - EOS Date (date picker, optional)
+   - Source URL (text input, optional)
+   - Notes (text input, optional)
+   - Save and Cancel buttons
+   - Show validation errors inline
+
+3. Edit mode: clicking Edit on a row populates the same form with existing values
+
+4. Delete confirmation: clicking Delete shows a confirmation dialog before deleting
+
+5. Import/Export section:
+   - "Export CSV" button that downloads the current overrides file
+   - "Import CSV" with a file upload area (drag-and-drop or file picker)
+   - After import, show a summary: "Added 5, Updated 2, Unchanged 10"
+
+6. A help text section explaining:
+   - "Manual overrides are checked last in the classification chain"
+   - "They catch models that automated checkers cannot classify"
+   - "Model matching is case-insensitive and supports partial matches"
+
+Style the page to match the existing frontend design patterns. Use the same component library and CSS approach already in use.
+
+PART 3 — TESTS
+
+tests/test_api_overrides.py:
+- GET /api/overrides returns current overrides
+- POST creates a new override and it appears in subsequent GET
+- POST with duplicate model+manufacturer returns 409
+- POST with invalid status returns 422
+- PUT updates an existing override
+- PUT with nonexistent override returns 404
+- DELETE removes an override
+- DELETE with nonexistent override returns 404
+- Export returns valid CSV with correct Content-Type
+- Import merges correctly (add + update + unchanged counts)
+- At least 12 test cases
+
+Use a temporary CSV file in tests (tmpdir fixture) so tests do not modify the real overrides file.
+
+All existing tests must still pass. ruff check clean.
+
+Do not mention Claude, Claude Code, Ralph, or any AI assistant in code, comments, commit messages, documentation, or any file. No co-author trailers in commits.

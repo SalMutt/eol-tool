@@ -9,6 +9,7 @@ import click
 
 from eol_tool import __version__
 
+from .input_filter import filter_models
 from .manufacturer_corrections import apply_manufacturer_corrections
 from .models import EOLResult, EOLStatus, HardwareModel, RiskCategory
 from .reader import read_models, write_results
@@ -98,12 +99,28 @@ async def _run_with_progress(
 @click.option("--dry-run", is_flag=True, help="Load models and show summary without checking")
 @click.option("--no-cache", is_flag=True, help="Skip the result cache")
 @click.option("--skip-fallback", is_flag=True, help="Skip the endoflife.date fallback checker")
-def check(input_path, output_path, manufacturer, concurrency, dry_run, no_cache, skip_fallback):
+@click.option("--show-filtered", is_flag=True, help="List rows removed by the input filter")
+def check(
+    input_path, output_path, manufacturer, concurrency, dry_run, no_cache, skip_fallback,
+    show_filtered,
+):
     """Check EOL status for hardware models."""
     models = read_models(Path(input_path))
     click.echo(f"Loaded {len(models)} models")
 
     apply_manufacturer_corrections(models)
+
+    models, filtered_rows = filter_models(models)
+    if filtered_rows:
+        if show_filtered:
+            click.echo(f"\nFiltered {len(filtered_rows)} junk rows:")
+            for f in filtered_rows:
+                click.echo(f"  {f['model']} \u2014 {f['reason']}")
+        else:
+            click.echo(
+                f"Filtered {len(filtered_rows)} junk rows"
+                " (use --show-filtered to list them)"
+            )
 
     by_mfr: dict[str, list] = {}
     for m in models:
@@ -136,7 +153,7 @@ def check(input_path, output_path, manufacturer, concurrency, dry_run, no_cache,
     )
 
     if output_path:
-        write_results(results, Path(output_path))
+        write_results(results, Path(output_path), filtered_rows=filtered_rows)
         click.echo(f"\nResults written to {output_path}")
 
     # Print summary table

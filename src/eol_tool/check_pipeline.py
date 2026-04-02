@@ -115,12 +115,15 @@ async def run_check_pipeline(
             checker_classes = []
             manual_cls = get_checker("__manual__")
             vendor_classes = get_checkers(mfr_name)
+            generic_optics_cls = get_checker("__generic_optics__")
             techgen_cls = get_checker("__techgen__")
             fallback_cls = None if skip_fallback else get_checker("__fallback__")
 
             if manual_cls:
                 checker_classes.append(manual_cls)
             checker_classes.extend(vendor_classes)
+            if generic_optics_cls:
+                checker_classes.append(generic_optics_cls)
             if techgen_cls:
                 checker_classes.append(techgen_cls)
             if fallback_cls:

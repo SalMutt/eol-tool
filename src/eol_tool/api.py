@@ -1,18 +1,25 @@
 """FastAPI application wrapping eol-tool functionality."""
 
+import csv
+import io
 import logging
+import re
+import threading
 from datetime import datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from fastapi import FastAPI, File, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, field_validator
 
 from eol_tool import __version__
 
 from .cache import ResultCache
 from .check_pipeline import run_check_pipeline
+from .input_filter import filter_models
 from .manufacturer_corrections import apply_manufacturer_corrections
 from .models import EOLResult, HardwareModel
 from .normalizer import normalize_model
@@ -20,6 +27,105 @@ from .reader import read_models
 from .registry import list_checkers
 
 logger = logging.getLogger(__name__)
+
+_VALID_STATUSES = {"eol", "active", "unknown"}
+_VALID_REASONS = {
+    "manufacturer_declared", "technology_generation", "product_discontinued",
+    "vendor_acquired", "community_data", "manual_override", "none", "",
+}
+_VALID_RISKS = {"security", "support", "procurement", "informational", "none", ""}
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_CSV_FIELDS = [
+    "model", "manufacturer", "status", "eol_reason", "risk_category",
+    "eol_date", "eos_date", "source_url", "notes",
+]
+
+_CSV_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "manual_overrides.csv"
+_csv_lock = threading.Lock()
+
+
+class OverrideBody(BaseModel):
+    model: str
+    manufacturer: str = ""
+    status: str
+    eol_reason: str = ""
+    risk_category: str = ""
+    eol_date: str = ""
+    eos_date: str = ""
+    source_url: str = ""
+    notes: str = ""
+
+    @field_validator("model")
+    @classmethod
+    def model_non_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("model is required and must be non-empty")
+        return v.strip()
+
+    @field_validator("status")
+    @classmethod
+    def status_valid(cls, v: str) -> str:
+        if v.lower() not in _VALID_STATUSES:
+            raise ValueError(f"status must be one of: {', '.join(sorted(_VALID_STATUSES))}")
+        return v.lower()
+
+    @field_validator("eol_reason")
+    @classmethod
+    def reason_valid(cls, v: str) -> str:
+        if v and v.lower() not in _VALID_REASONS:
+            valid = ", ".join(sorted(_VALID_REASONS - {""}))
+            raise ValueError(f"eol_reason must be one of: {valid}")
+        return v.lower()
+
+    @field_validator("risk_category")
+    @classmethod
+    def risk_valid(cls, v: str) -> str:
+        if v and v.lower() not in _VALID_RISKS:
+            valid = ", ".join(sorted(_VALID_RISKS - {""}))
+            raise ValueError(f"risk_category must be one of: {valid}")
+        return v.lower()
+
+    @field_validator("eol_date", "eos_date")
+    @classmethod
+    def date_format(cls, v: str) -> str:
+        if v and not _DATE_RE.match(v):
+            raise ValueError("date must be in YYYY-MM-DD format")
+        return v
+
+
+class OverrideDeleteParams(BaseModel):
+    model: str
+    manufacturer: str = ""
+
+
+def _read_overrides_csv(csv_path: Path | None = None) -> list[dict[str, str]]:
+    path = csv_path or _CSV_PATH
+    if not path.exists():
+        return []
+    with open(path, newline="", encoding="utf-8") as fh:
+        return list(csv.DictReader(fh))
+
+
+def _write_overrides_csv(rows: list[dict[str, str]], csv_path: Path | None = None) -> None:
+    path = csv_path or _CSV_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".csv.tmp")
+    with open(tmp, "w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=_CSV_FIELDS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({k: row.get(k, "") for k in _CSV_FIELDS})
+    tmp.replace(path)
+
+
+def _override_key(row: dict[str, str]) -> tuple[str, str]:
+    return (row.get("model", "").strip().lower(), row.get("manufacturer", "").strip().lower())
+
+
+def get_csv_path() -> Path:
+    """Return the CSV path. Allows tests to override."""
+    return _CSV_PATH
+
 
 app = FastAPI(title="EOL Tool API", version=__version__)
 
@@ -143,6 +249,7 @@ async def check_upload(file: UploadFile = File(...)):
     try:
         models = read_models(tmp_path)
         apply_manufacturer_corrections(models)
+        models, filtered_rows = filter_models(models)
         results = await run_check_pipeline(models)
     finally:
         tmp_path.unlink(missing_ok=True)
@@ -155,6 +262,7 @@ async def check_upload(file: UploadFile = File(...)):
 
     return {
         "total": len(results),
+        "filtered": len(filtered_rows),
         "eol": status_counts.get("eol", 0) + status_counts.get("eol_announced", 0),
         "active": status_counts.get("active", 0),
         "unknown": status_counts.get("unknown", 0),
@@ -233,6 +341,136 @@ async def sources():
         source_list.append(entry)
 
     return {"sources": source_list}
+
+
+@app.get("/api/overrides")
+async def list_overrides():
+    """Return all manual overrides as a JSON array."""
+    with _csv_lock:
+        rows = _read_overrides_csv(get_csv_path())
+    return [
+        {k: row.get(k, "") for k in _CSV_FIELDS}
+        for row in rows
+        if row.get("model", "").strip()
+    ]
+
+
+@app.post("/api/overrides", status_code=201)
+async def create_override(body: OverrideBody):
+    """Add a new manual override."""
+    new_key = (body.model.lower(), body.manufacturer.strip().lower())
+    with _csv_lock:
+        rows = _read_overrides_csv(get_csv_path())
+        for row in rows:
+            if _override_key(row) == new_key:
+                return Response(
+                    content='{"detail":"duplicate model+manufacturer combination"}',
+                    status_code=409,
+                    media_type="application/json",
+                )
+        new_row = body.model_dump()
+        rows.append(new_row)
+        _write_overrides_csv(rows, get_csv_path())
+    return {k: new_row.get(k, "") for k in _CSV_FIELDS}
+
+
+@app.put("/api/overrides")
+async def update_override(body: OverrideBody):
+    """Update an existing manual override identified by model+manufacturer."""
+    target_key = (body.model.lower(), body.manufacturer.strip().lower())
+    with _csv_lock:
+        rows = _read_overrides_csv(get_csv_path())
+        found = False
+        for i, row in enumerate(rows):
+            if _override_key(row) == target_key:
+                rows[i] = body.model_dump()
+                found = True
+                break
+        if not found:
+            return Response(
+                content='{"detail":"override not found"}',
+                status_code=404,
+                media_type="application/json",
+            )
+        _write_overrides_csv(rows, get_csv_path())
+    return {k: rows[i].get(k, "") for k in _CSV_FIELDS}
+
+
+@app.delete("/api/overrides")
+async def delete_override(
+    model: str = Query(..., description="Model to delete"),
+    manufacturer: str = Query("", description="Manufacturer"),
+):
+    """Delete a manual override by model+manufacturer."""
+    target_key = (model.strip().lower(), manufacturer.strip().lower())
+    with _csv_lock:
+        rows = _read_overrides_csv(get_csv_path())
+        new_rows = [r for r in rows if _override_key(r) != target_key]
+        if len(new_rows) == len(rows):
+            return Response(
+                content='{"detail":"override not found"}',
+                status_code=404,
+                media_type="application/json",
+            )
+        _write_overrides_csv(new_rows, get_csv_path())
+    return {"deleted": True}
+
+
+@app.get("/api/overrides/export")
+async def export_overrides():
+    """Download the overrides CSV file."""
+    with _csv_lock:
+        rows = _read_overrides_csv(get_csv_path())
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=_CSV_FIELDS)
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({k: row.get(k, "") for k in _CSV_FIELDS})
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=manual_overrides.csv"},
+    )
+
+
+@app.post("/api/overrides/import")
+async def import_overrides(file: UploadFile = File(...)):
+    """Import a CSV file and merge with existing overrides."""
+    content = (await file.read()).decode("utf-8")
+    reader = csv.DictReader(io.StringIO(content))
+    incoming = list(reader)
+
+    with _csv_lock:
+        existing = _read_overrides_csv(get_csv_path())
+        existing_map: dict[tuple[str, str], int] = {}
+        for i, row in enumerate(existing):
+            existing_map[_override_key(row)] = i
+
+        added = 0
+        updated = 0
+        unchanged = 0
+
+        for imp_row in incoming:
+            key = _override_key(imp_row)
+            if not key[0]:
+                continue
+            normalized = {k: imp_row.get(k, "") for k in _CSV_FIELDS}
+            if key in existing_map:
+                idx = existing_map[key]
+                old = {k: existing[idx].get(k, "") for k in _CSV_FIELDS}
+                if old != normalized:
+                    existing[idx] = normalized
+                    updated += 1
+                else:
+                    unchanged += 1
+            else:
+                existing.append(normalized)
+                existing_map[key] = len(existing) - 1
+                added += 1
+
+        _write_overrides_csv(existing, get_csv_path())
+
+    return {"added": added, "updated": updated, "unchanged": unchanged}
 
 
 # Mount static files last so API routes take precedence

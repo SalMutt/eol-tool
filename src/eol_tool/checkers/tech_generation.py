@@ -45,6 +45,9 @@ class TechGenerationChecker(BaseChecker):
             self._check_network,
             self._check_gpu,
             self._check_cooling,
+            self._check_server_platforms,
+            self._check_raid_controllers,
+            self._check_hpe,
         ]:
             result = check_fn(model)
             if result:
@@ -93,6 +96,14 @@ class TechGenerationChecker(BaseChecker):
                 "EVGA exited GPU business 2022",
                 eol_reason=EOLReason.VENDOR_ACQUIRED,
             )
+        if mfr == "hitachi":
+            return self._make_result(
+                model,
+                EOLStatus.EOL,
+                RiskCategory.PROCUREMENT,
+                "hitachi-gst-acquired-by-western-digital-2012",
+                eol_reason=EOLReason.VENDOR_ACQUIRED,
+            )
         return None
 
     # ------------------------------------------------------------------
@@ -118,7 +129,15 @@ class TechGenerationChecker(BaseChecker):
     def _check_memory(self, model: HardwareModel) -> EOLResult | None:
         m = model.model.upper()
         cat = model.category.lower()
+        mfr = model.manufacturer.lower()
         is_memory_cat = cat in ("memory", "ram", "dimm")
+
+        # Corsair DDR5 memory
+        if mfr == "corsair" and ("DDR5" in m or m.startswith("CMK")):
+            return self._make_result(
+                model, EOLStatus.ACTIVE, RiskCategory.NONE,
+                "Corsair DDR5 memory — current generation",
+            )
 
         # DDR5 (check first — most current)
         if (
@@ -145,13 +164,21 @@ class TechGenerationChecker(BaseChecker):
         # DDR3 (check last — oldest)
         if (
             any(m.startswith(p) for p in self._DDR3_PREFIXES)
-            or "DDR3" in m
+            or "DDR3" in m or "PC3" in m
             or (is_memory_cat and re.search(r"(?<!\d)(?:1333|1600)(?!\d)", m))
         ):
             return self._make_result(
                 model, EOLStatus.EOL, RiskCategory.PROCUREMENT,
                 "DDR3 memory — end of life generation",
             )
+
+        # Kingston server memory — KTH/KTD with DDR generation encoding
+        if mfr == "kingston" and (m.startswith("KTH") or m.startswith("KTD")):
+            if re.search(r"(?:PL|PE)3", m):
+                return self._make_result(
+                    model, EOLStatus.EOL, RiskCategory.PROCUREMENT,
+                    "Kingston DDR3 server memory — end of life generation",
+                )
 
         return None
 
@@ -364,6 +391,15 @@ class TechGenerationChecker(BaseChecker):
                         f"Micron {tag} — active",
                     )
 
+        # Kingston SSDs — modern
+        if mfr == "kingston":
+            for prefix in ["SA400", "A2000", "NV1", "NV2", "DC"]:
+                if m.startswith(prefix):
+                    return self._make_result(
+                        model, EOLStatus.ACTIVE, RiskCategory.NONE,
+                        f"Kingston {prefix} storage — active",
+                    )
+
         return None
 
     # ------------------------------------------------------------------
@@ -426,6 +462,14 @@ class TechGenerationChecker(BaseChecker):
                 "Mellanox ConnectX-4/5 — active",
             )
 
+        # IBM/Lenovo RackSwitch
+        if model.manufacturer.lower() == "ibm" and m.startswith("4273"):
+            return self._make_result(
+                model, EOLStatus.EOL, RiskCategory.SUPPORT,
+                "IBM/Lenovo RackSwitch G8272 — discontinued",
+                eol_reason=EOLReason.PRODUCT_DISCONTINUED,
+            )
+
         return None
 
     # ------------------------------------------------------------------
@@ -456,6 +500,20 @@ class TechGenerationChecker(BaseChecker):
                 "NVIDIA GeForce GTX 1080 Ti — end of life",
             )
 
+        # Zotac GPUs (Pascal era)
+        if model.manufacturer.lower() == "zotac" and m.startswith("ZT-P"):
+            return self._make_result(
+                model, EOLStatus.EOL, RiskCategory.PROCUREMENT,
+                "Zotac GPU (Pascal) — end of life",
+            )
+
+        # PNY GeForce GPUs (Pascal era)
+        if m.startswith("VCG") and "1080" in m:
+            return self._make_result(
+                model, EOLStatus.EOL, RiskCategory.PROCUREMENT,
+                "PNY GTX 1080 Ti (Pascal) — end of life",
+            )
+
         # NVIDIA GP100 / Quadro GP100 (Pascal era)
         if "GP100" in m or "VCQGP100" in m:
             return self._make_result(
@@ -468,6 +526,20 @@ class TechGenerationChecker(BaseChecker):
             return self._make_result(
                 model, EOLStatus.EOL, RiskCategory.INFORMATIONAL,
                 "NVIDIA Quadro K1200 (Maxwell) — end of life",
+            )
+
+        # PNY/NVIDIA Quadro RTX 4000 (Turing)
+        if m.startswith("VCQRTX4000"):
+            return self._make_result(
+                model, EOLStatus.EOL, RiskCategory.INFORMATIONAL,
+                "NVIDIA Quadro RTX 4000 (Turing) — end of life",
+            )
+
+        # PNY/NVIDIA Quadro P-series (Pascal)
+        if m.startswith("VCQP"):
+            return self._make_result(
+                model, EOLStatus.EOL, RiskCategory.PROCUREMENT,
+                "NVIDIA Quadro P-series (Pascal) — end of life",
             )
 
         # NVIDIA Tesla/Quadro P-series
@@ -513,4 +585,101 @@ class TechGenerationChecker(BaseChecker):
                 model, EOLStatus.UNKNOWN, RiskCategory.NONE,
                 "heatsink-lifecycle-follows-cpu-socket",
             )
+        return None
+
+    # ------------------------------------------------------------------
+    # Server platforms (ASUS, ASRock)
+    # ------------------------------------------------------------------
+
+    def _check_server_platforms(self, model: HardwareModel) -> EOLResult | None:
+        m = model.model.upper()
+        mfr = model.manufacturer.lower()
+
+        # ASUS server barebones — Intel/AMD platform generations
+        if mfr == "asus" and m.startswith("RS"):
+            gen_match = re.search(r"-E(\d+)", m)
+            if gen_match:
+                gen = int(gen_match.group(1))
+                if gen <= 9:
+                    return self._make_result(
+                        model, EOLStatus.EOL, RiskCategory.PROCUREMENT,
+                        f"ASUS server E{gen} platform — end of life",
+                    )
+                if gen == 10:
+                    return self._make_result(
+                        model, EOLStatus.ACTIVE, RiskCategory.INFORMATIONAL,
+                        f"ASUS server E{gen} platform — active",
+                    )
+                if gen >= 11:
+                    return self._make_result(
+                        model, EOLStatus.ACTIVE, RiskCategory.NONE,
+                        f"ASUS server E{gen} platform — active",
+                    )
+
+        # ASRock Rack — AMD EPYC 8004 Siena platform
+        if mfr == "asrock" and m.startswith("S80"):
+            return self._make_result(
+                model, EOLStatus.ACTIVE, RiskCategory.NONE,
+                "ASRock Rack EPYC 8004 Siena platform — active",
+            )
+
+        return None
+
+    # ------------------------------------------------------------------
+    # RAID controllers (IBM ServeRAID, Adaptec)
+    # ------------------------------------------------------------------
+
+    def _check_raid_controllers(self, model: HardwareModel) -> EOLResult | None:
+        m = model.model.upper()
+        mfr = model.manufacturer.lower()
+
+        # IBM ServeRAID controllers and accessories
+        if mfr == "ibm":
+            if "M50" in m or "M52" in m:
+                return self._make_result(
+                    model, EOLStatus.EOL, RiskCategory.SUPPORT,
+                    "IBM ServeRAID controller — discontinued",
+                    eol_reason=EOLReason.PRODUCT_DISCONTINUED,
+                )
+            if m == "46C9111":
+                return self._make_result(
+                    model, EOLStatus.EOL, RiskCategory.PROCUREMENT,
+                    "IBM ServeRAID battery pack — discontinued",
+                    eol_reason=EOLReason.PRODUCT_DISCONTINUED,
+                )
+
+        # Adaptec RAID controllers
+        if mfr == "adaptec" and "ASR-" in m:
+            return self._make_result(
+                model, EOLStatus.EOL, RiskCategory.PROCUREMENT,
+                "adaptec-raid-discontinued-microsemi-microchip-acquisition",
+                eol_reason=EOLReason.PRODUCT_DISCONTINUED,
+            )
+
+        return None
+
+    # ------------------------------------------------------------------
+    # HPE legacy components
+    # ------------------------------------------------------------------
+
+    def _check_hpe(self, model: HardwareModel) -> EOLResult | None:
+        m = model.model.upper()
+        if model.manufacturer.lower() != "hpe":
+            return None
+
+        # HPE optics — active
+        if "SFP" in m or "QSFP" in m:
+            return self._make_result(
+                model, EOLStatus.ACTIVE, RiskCategory.NONE,
+                "HPE branded optic — active",
+            )
+
+        # HPE legacy drives — model contains MB and ends with digits
+        if "MB" in m and re.search(r"\d$", m):
+            return self._make_result(
+                model, EOLStatus.EOL, RiskCategory.PROCUREMENT,
+                "HPE legacy drive — end of life",
+                eol_reason=EOLReason.PRODUCT_DISCONTINUED,
+            )
+
         return None
