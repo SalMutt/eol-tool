@@ -593,7 +593,6 @@ function App() {
   const [uploadError, setUploadError] = useState("");
   const [uploadProgress, setUploadProgress] = useState("");
 
-  if (page === "overrides") return e(OverridesPage, { onBack: function() { setPage("main"); } });
 
   var parseFile = useCallback(function(file) {
     var reader = new FileReader();
@@ -896,6 +895,7 @@ function App() {
   }, [handleSearch]);
 
   // Processing screen — shown while API is checking raw inventory
+  if (page === "overrides") return e(OverridesPage, { onBack: function() { setPage("main"); } });
   if (uploadLoading) {
     return e("div", {
       style: { minHeight: "100vh", background: "#08080b", display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 20px" },
