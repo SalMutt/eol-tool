@@ -11,6 +11,9 @@ build/
 *.so
 .claude/
 *.xlsx
-!data/*.xlsx
+!data/manual_overrides.csv
 PHASE_COMPLETE.md
 .env
+results/
+results-*.xlsx
+docs/superpowers/
