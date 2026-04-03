@@ -48,6 +48,37 @@ const RISK_CONFIG = {
 
 const mono = "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace";
 
+function relativeTime(dateStr) {
+  if (!dateStr) return "";
+  var d;
+  try { d = new Date(dateStr); } catch (e) { return ""; }
+  if (isNaN(d.getTime())) return "";
+  var now = Date.now();
+  var diff = now - d.getTime();
+  if (diff < 0) return "just now";
+  var sec = Math.floor(diff / 1000);
+  if (sec < 60) return "just now";
+  var min = Math.floor(sec / 60);
+  if (min < 60) return min + "m ago";
+  var hr = Math.floor(min / 60);
+  if (hr < 24) return hr + "h ago";
+  var day = Math.floor(hr / 24);
+  if (day < 14) return day + "d ago";
+  var wk = Math.floor(day / 7);
+  return wk + " weeks ago";
+}
+
+function freshnessColor(dateStr) {
+  if (!dateStr) return "#71717a";
+  var d;
+  try { d = new Date(dateStr); } catch (e) { return "#71717a"; }
+  if (isNaN(d.getTime())) return "#71717a";
+  var hours = (Date.now() - d.getTime()) / 3600000;
+  if (hours <= 24) return "#22c55e";
+  if (hours <= 168) return "#ca8a04";
+  return "#ef4444";
+}
+
 function StatusBadge({ status }) {
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.unknown;
   return e("span", {
@@ -107,7 +138,8 @@ function DateSourceBadge({ dateSource }) {
 }
 
 function ModelTable({ models }) {
-  const headers = ["Model", "Category", "Status", "Risk", "EOL Reason", "EOL Date", "Date Source", "Confidence", "Notes"];
+  var hasCheckedAt = models.some(function(m) { return m.checkedAt; });
+  const headers = ["Model", "Category", "Status", "Risk", "EOL Reason", "EOL Date", "Date Source", "Confidence"].concat(hasCheckedAt ? ["Last Checked"] : []).concat(["Notes"]);
   return e("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
     e("thead", null,
       e("tr", { style: { background: "#0a0a0d" } },
@@ -159,6 +191,7 @@ function ModelTable({ models }) {
               e("span", { style: { fontSize: 11, color: "#52525b", fontFamily: mono } }, m.confidence),
             ) : "—"
           ),
+          hasCheckedAt ? e("td", { style: { padding: "8px 12px", fontSize: 11, fontFamily: mono, color: freshnessColor(m.checkedAt), whiteSpace: "nowrap" }, title: m.checkedAt || "" }, relativeTime(m.checkedAt) || "—") : null,
           e("td", { style: { padding: "8px 12px", color: "#52525b", fontSize: 11, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: m.notes }, m.notes || "—"),
         );
       })
@@ -171,6 +204,16 @@ function ManufacturerGroup({ name, models, expanded, onToggle }) {
   const activeCount = models.filter(function(m) { return m.status === "active"; }).length;
   const otherCount = models.length - eolCount - activeCount;
   const secRisk = models.filter(function(m) { return m.risk === "security"; }).length;
+
+  // Find oldest checked_at across this manufacturer's models
+  var oldestChecked = null;
+  models.forEach(function(m) {
+    if (m.checkedAt) {
+      var d = new Date(m.checkedAt);
+      if (!isNaN(d.getTime()) && (oldestChecked === null || d < oldestChecked)) oldestChecked = d;
+    }
+  });
+  var checkedStr = oldestChecked ? relativeTime(oldestChecked.toISOString()) : "";
 
   return e("div", { style: { marginBottom: 2 } },
     e("button", {
@@ -193,7 +236,9 @@ function ManufacturerGroup({ name, models, expanded, onToggle }) {
         }
       }, "\u25B6"),
       e("span", { style: { flex: 1, fontWeight: 600, fontSize: 14, fontFamily: mono } }, name || "(no manufacturer)"),
-      e("span", { style: { fontSize: 12, color: "#71717a", fontFamily: mono } }, models.length + " models"),
+      e("span", { style: { fontSize: 12, color: "#71717a", fontFamily: mono } },
+        models.length + " models" + (checkedStr ? " \u00B7 checked " + checkedStr : "")
+      ),
       e("div", { style: { display: "flex", gap: 8, marginLeft: 8 } },
         eolCount > 0 ? e("span", { style: { color: "#ef4444", fontSize: 12, fontFamily: mono, fontWeight: 600 } }, eolCount + " EOL") : null,
         activeCount > 0 ? e("span", { style: { color: "#22c55e", fontSize: 12, fontFamily: mono, fontWeight: 600 } }, activeCount + " Active") : null,
@@ -592,7 +637,30 @@ function App() {
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [uploadProgress, setUploadProgress] = useState("");
+  const [apiStatus, setApiStatus] = useState(null); // null=loading, {connected,lastCheck,label} or {connected:false}
 
+  // Fetch API status on mount (non-blocking, 3s timeout)
+  React.useEffect(function() {
+    var controller = new AbortController();
+    var timer = setTimeout(function() { controller.abort(); }, 3000);
+    fetch(API_BASE + "/api/status", { signal: controller.signal })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        clearTimeout(timer);
+        setApiStatus({
+          connected: true,
+          lastCheck: d.last_check_time || null,
+          label: d.last_check_time
+            ? "API connected \u00B7 last check " + relativeTime(d.last_check_time)
+            : "API connected \u00B7 no recent results",
+        });
+      })
+      .catch(function() {
+        clearTimeout(timer);
+        setApiStatus({ connected: false, lastCheck: null, label: "Offline mode" });
+      });
+    return function() { clearTimeout(timer); controller.abort(); };
+  }, []);
 
   var parseFile = useCallback(function(file) {
     var reader = new FileReader();
@@ -612,6 +680,7 @@ function App() {
         if (hasEOLStatus) {
           // Pre-processed results — visualize directly
           var models = rows.map(function(r) {
+            var src = (r["Source"] || r["source"] || "").toLowerCase();
             return {
               model: r["Model"] || r["model"] || "",
               manufacturer: r["Manufacturer"] || r["manufacturer"] || "",
@@ -627,6 +696,8 @@ function App() {
               risk: (r["Risk Category"] || r["risk_category"] || "none").toLowerCase().trim(),
               originalItem: r["Original_Item"] || r["original_item"] || "",
               dateSource: r["Date Source"] || r["date_source"] || "none",
+              checkedAt: r["Checked At"] || r["checked_at"] || "",
+              isOverride: src.indexOf("manual-override") !== -1 || src.indexOf("manual_override") !== -1,
             };
           }).filter(function(m) { return m.model; });
           setData({ models: models, fileName: file.name });
@@ -647,6 +718,7 @@ function App() {
             .then(function(apiData) {
               var results = apiData.results || apiData;
               var models = (Array.isArray(results) ? results : []).map(function(r) {
+                var rsrc = (r.source || "").toLowerCase();
                 return {
                   model: r.model || r.Model || "",
                   manufacturer: r.manufacturer || r.Manufacturer || "",
@@ -662,6 +734,8 @@ function App() {
                   risk: (r.risk_category || r.risk || "none").toLowerCase().trim(),
                   originalItem: r.original_item || r.originalItem || "",
                   dateSource: r.date_source || r.dateSource || "none",
+                  checkedAt: "",
+                  isOverride: rsrc.indexOf("manual-override") !== -1 || rsrc.indexOf("manual_override") !== -1,
                 };
               }).filter(function(m) { return m.model; });
               setData({ models: models, fileName: file.name });
@@ -732,6 +806,15 @@ function App() {
   var stats = useMemo(function() {
     if (!data) return null;
     var m = data.models;
+    var overrides = m.filter(function(x) { return x.isOverride; }).length;
+    // Find newest checked_at across all models
+    var newest = null;
+    m.forEach(function(x) {
+      if (x.checkedAt) {
+        var d = new Date(x.checkedAt);
+        if (!isNaN(d.getTime()) && (newest === null || d > newest)) newest = d;
+      }
+    });
     return {
       total: m.length,
       eol: m.filter(function(x) { return x.status === "eol"; }).length,
@@ -742,6 +825,8 @@ function App() {
       security: m.filter(function(x) { return x.risk === "security"; }).length,
       support: m.filter(function(x) { return x.risk === "support"; }).length,
       procurement: m.filter(function(x) { return x.risk === "procurement"; }).length,
+      overrides: overrides,
+      newestChecked: newest ? newest.toISOString() : null,
     };
   }, [data]);
 
@@ -1223,9 +1308,25 @@ function App() {
       e("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 } },
         e("div", null,
           e("h1", { style: { fontSize: 20, fontWeight: 700, fontFamily: mono, margin: 0 } }, "EOL Hardware Report"),
-          e("p", { style: { fontSize: 12, color: "#52525b", margin: "4px 0 0", fontFamily: mono } }, data.fileName + " \u2014 " + stats.total + " models"),
+          e("div", { style: { display: "flex", alignItems: "center", gap: 12, margin: "4px 0 0" } },
+            e("span", { style: { fontSize: 12, color: "#52525b", fontFamily: mono } }, data.fileName + " \u2014 " + stats.total + " models"),
+            stats.newestChecked ? e("span", {
+              style: { fontSize: 11, color: freshnessColor(stats.newestChecked), fontFamily: mono },
+              title: stats.newestChecked,
+            }, "Last checked: " + relativeTime(stats.newestChecked)) : null,
+          ),
         ),
         e("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
+          apiStatus ? e("div", {
+            style: { display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", background: "#111114", borderRadius: 6, border: "1px solid #1e1e24", marginRight: 4 },
+            title: apiStatus.lastCheck || "",
+          },
+            e("span", { style: {
+              width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+              background: apiStatus.connected ? (apiStatus.lastCheck ? "#22c55e" : "#ca8a04") : "#52525b",
+            } }),
+            e("span", { style: { fontSize: 10, color: "#71717a", fontFamily: mono, whiteSpace: "nowrap" } }, apiStatus.label),
+          ) : null,
           e("select", {
             id: "export-format",
             style: { padding: "8px 10px", background: "#111114", border: "1px solid #2a2a32", borderRadius: 6, color: "#a1a1aa", fontSize: 12, cursor: "pointer", fontFamily: mono },
@@ -1278,6 +1379,7 @@ function App() {
         e(StatCard, { label: "Active", value: stats.active, color: "#22c55e", total: stats.total }),
         e(StatCard, { label: "Unknown", value: stats.unknown + stats.notFound, color: "#ca8a04", total: stats.total }),
         e(StatCard, { label: "With Dates", value: stats.dated, color: "#3b82f6", total: stats.total }),
+        e(StatCard, { label: "Manual Overrides", value: stats.overrides, color: "#3b82f6", total: stats.total }),
         e(StatCard, { label: "Security Risk", value: stats.security, color: "#ef4444", total: stats.total }),
         e(StatCard, { label: "Support Risk", value: stats.support, color: "#f97316", total: stats.total }),
       ),
@@ -1291,11 +1393,12 @@ function App() {
         ),
         e("div", { style: { height: 8, background: "#1e1e24", borderRadius: 4, overflow: "hidden", display: "flex" } },
           e("div", { style: { height: "100%", width: (stats.eol / stats.total * 100) + "%", background: "#ef4444", transition: "width 0.6s" } }),
-          e("div", { style: { height: "100%", width: (stats.active / stats.total * 100) + "%", background: "#22c55e", transition: "width 0.6s" } }),
+          e("div", { style: { height: "100%", width: ((stats.active - stats.overrides) / stats.total * 100) + "%", background: "#22c55e", transition: "width 0.6s" } }),
+          stats.overrides > 0 ? e("div", { style: { height: "100%", width: (stats.overrides / stats.total * 100) + "%", background: "#3b82f6", transition: "width 0.6s" } }) : null,
           e("div", { style: { height: "100%", width: (stats.unknown / stats.total * 100) + "%", background: "#ca8a04", transition: "width 0.6s" } }),
         ),
         e("div", { style: { display: "flex", gap: 16, marginTop: 8 } },
-          [["EOL", "#ef4444", stats.eol], ["Active", "#22c55e", stats.active], ["Unknown", "#ca8a04", stats.unknown], ["Not Found", "#71717a", stats.notFound]].map(function(item) {
+          [["EOL", "#ef4444", stats.eol], ["Active", "#22c55e", stats.active], ["Override", "#3b82f6", stats.overrides], ["Unknown", "#ca8a04", stats.unknown], ["Not Found", "#71717a", stats.notFound]].map(function(item) {
             return e("div", { key: item[0], style: { display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#52525b" } },
               e("span", { style: { width: 8, height: 8, borderRadius: 2, background: item[1] } }),
               item[0] + ": " + item[2],

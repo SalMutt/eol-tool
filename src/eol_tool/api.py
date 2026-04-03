@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import logging
+import os
 import re
 import threading
 from datetime import datetime
@@ -211,6 +212,84 @@ def _infer_manufacturer(model_str: str) -> str:
 async def health():
     """Health check endpoint."""
     return {"status": "ok", "version": __version__}
+
+
+def _get_results_dir() -> Path:
+    """Return the results directory path."""
+    return Path(os.environ.get("EOL_TOOL_RESULTS_DIR", "./results"))
+
+
+def _find_latest_results(results_dir: Path | None = None) -> Path | None:
+    """Find the most recent results xlsx file."""
+    rdir = results_dir or _get_results_dir()
+    if not rdir.exists():
+        return None
+    files = sorted(rdir.glob("eol-results-*.xlsx"), reverse=True)
+    return files[0] if files else None
+
+
+# Set by scheduler when running; allows /api/status to report next check time
+_next_scheduled_check: str | None = None
+
+
+@app.get("/api/status")
+async def status():
+    """System status: last check info, counts, and cache stats."""
+    results_dir = _get_results_dir()
+    latest = _find_latest_results(results_dir)
+
+    result: dict = {
+        "last_check_time": None,
+        "last_check_file": None,
+        "total_models": 0,
+        "eol_count": 0,
+        "active_count": 0,
+        "unknown_count": 0,
+        "cache_stats": None,
+        "next_scheduled_check": _next_scheduled_check,
+    }
+
+    if latest:
+        result["last_check_file"] = latest.name
+        # Extract timestamp from filename: eol-results-YYYY-MM-DDThh-mm-ss.xlsx
+        stem = latest.stem  # eol-results-YYYY-MM-DDThh-mm-ss
+        ts_part = stem.replace("eol-results-", "", 1)
+        try:
+            check_time = datetime.strptime(ts_part, "%Y-%m-%dT%H-%M-%S")
+            result["last_check_time"] = check_time.isoformat()
+        except ValueError:
+            # Fall back to file modification time
+            mtime = datetime.fromtimestamp(latest.stat().st_mtime)
+            result["last_check_time"] = mtime.isoformat()
+
+        # Read basic counts from the results file
+        try:
+            from .reader import read_results
+
+            results = read_results(latest)
+            result["total_models"] = len(results)
+            for r in results:
+                sv = r.status.value
+                if sv in ("eol", "eol_announced"):
+                    result["eol_count"] += 1
+                elif sv == "active":
+                    result["active_count"] += 1
+                elif sv in ("unknown", "not_found"):
+                    result["unknown_count"] += 1
+        except Exception:
+            logger.warning("Failed to read results from %s", latest, exc_info=True)
+
+    # Cache stats
+    try:
+        cache_inst = ResultCache()
+        try:
+            result["cache_stats"] = await cache_inst.stats()
+        finally:
+            await cache_inst.close()
+    except Exception:
+        logger.warning("Failed to get cache stats", exc_info=True)
+
+    return result
 
 
 @app.get("/api/lookup")
