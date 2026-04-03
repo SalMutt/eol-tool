@@ -210,8 +210,37 @@ def _infer_manufacturer(model_str: str) -> str:
 
 @app.get("/api/health")
 async def health():
-    """Health check endpoint."""
-    return {"status": "ok", "version": __version__}
+    """Scraper health dashboard data."""
+    from .health import get_checker_health
+
+    h = get_checker_health()
+    data = h.get_health()
+
+    recommendations: list[str] = []
+    for name, info in data["checkers"].items():
+        if info["status"] == "down":
+            recommendations.append(
+                f"{name} scraper is failing. Check if the vendor changed their page structure."
+            )
+        elif info["status"] == "degraded":
+            recommendations.append(
+                f"{name} has {info['success_rate']}% success rate."
+                " May be experiencing rate limits."
+            )
+        if info["retry_count"] >= 5:
+            recommendations.append(
+                f"{name} required {info['retry_count']} retries."
+                " Consider increasing timeout."
+            )
+
+    if not data["checkers"]:
+        recommendations.append(
+            "No EOL checks recorded. Run a check or start the scheduler."
+        )
+
+    data["recommendations"] = recommendations
+    data["version"] = __version__
+    return data
 
 
 def _get_results_dir() -> Path:

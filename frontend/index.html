@@ -282,6 +282,205 @@ function downloadTemplate(format) {
   }
 }
 
+function HealthPage({ onBack }) {
+  const [health, setHealth] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  var fetchHealth = useCallback(function() {
+    setLoading(true);
+    setError("");
+    fetch(API_BASE + "/api/health")
+      .then(function(r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function(d) { setHealth(d); setLoading(false); })
+      .catch(function(err) { setError("Health data unavailable \u2014 API offline"); setLoading(false); });
+  }, []);
+
+  React.useEffect(function() {
+    fetchHealth();
+    var interval = setInterval(function() {
+      if (!document.hidden) fetchHealth();
+    }, 30000);
+    return function() { clearInterval(interval); };
+  }, [fetchHealth]);
+
+  var statusColor = function(s) {
+    if (s === "healthy") return "#22c55e";
+    if (s === "degraded") return "#ca8a04";
+    if (s === "down") return "#ef4444";
+    return "#71717a";
+  };
+
+  var statusBg = function(s) {
+    if (s === "healthy") return "#0d2818";
+    if (s === "degraded") return "#1e1b16";
+    if (s === "down") return "#2d1215";
+    return "#1a1a1e";
+  };
+
+  var statusBorder = function(s) {
+    if (s === "healthy") return "#1a5632";
+    if (s === "degraded") return "#4a3f2f";
+    if (s === "down") return "#6b2128";
+    return "#3a3a42";
+  };
+
+  var bannerText = function(s) {
+    if (s === "healthy") return "All Systems Healthy";
+    if (s === "degraded") return "Some Scrapers Degraded";
+    if (s === "down") return "Scrapers Down \u2014 Results May Be Incomplete";
+    return "No Checks Recorded";
+  };
+
+  return e("div", { style: { minHeight: "100vh", background: "#08080b", color: "#e4e4e7" } },
+    e("div", { style: { maxWidth: 1200, margin: "0 auto", padding: "24px 20px" } },
+
+      // Header
+      e("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 } },
+        e("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
+          e("button", {
+            onClick: onBack,
+            style: { padding: "6px 12px", background: "#1e1e24", border: "none", borderRadius: 6, color: "#a1a1aa", fontSize: 12, cursor: "pointer", fontFamily: mono },
+          }, "\u2190 Back"),
+          e("h1", { style: { fontSize: 20, fontWeight: 700, fontFamily: mono, margin: 0 } }, "System Health"),
+        ),
+        e("button", {
+          onClick: fetchHealth,
+          style: { padding: "8px 16px", background: "#0c1929", border: "1px solid #1d3a5c", borderRadius: 6, color: "#3b82f6", fontSize: 12, cursor: "pointer", fontFamily: mono, fontWeight: 600 },
+          onMouseEnter: function(ev) { ev.currentTarget.style.background = "#0f2035"; },
+          onMouseLeave: function(ev) { ev.currentTarget.style.background = "#0c1929"; },
+        }, "\u21BB Refresh"),
+      ),
+
+      // Error state
+      error ? e("div", { style: { background: "#2d1215", border: "1px solid #6b2128", borderRadius: 8, padding: "16px 20px", color: "#ef4444", fontSize: 13, textAlign: "center" } }, error)
+
+      // Loading state
+      : loading ? e("div", { style: { textAlign: "center", padding: 48, color: "#52525b", fontSize: 14 } }, "Loading health data...")
+
+      // Health dashboard
+      : e("div", null,
+
+        // Overall status banner
+        e("div", {
+          style: {
+            background: statusBg(health.overall_status), border: "1px solid " + statusBorder(health.overall_status),
+            borderRadius: 8, padding: "16px 24px", marginBottom: 24,
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+          },
+        },
+          e("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
+            e("span", { style: { width: 12, height: 12, borderRadius: "50%", background: statusColor(health.overall_status), flexShrink: 0 } }),
+            e("span", { style: { fontSize: 16, fontWeight: 700, color: statusColor(health.overall_status), fontFamily: mono } }, bannerText(health.overall_status)),
+          ),
+          e("div", { style: { display: "flex", gap: 20, fontSize: 12, color: "#71717a", fontFamily: mono } },
+            e("span", null, "Checks: " + health.total_checks),
+            e("span", null, "Failures: " + health.total_failures),
+            e("span", null, "Uptime: " + (health.uptime_seconds >= 3600 ? Math.floor(health.uptime_seconds / 3600) + "h " + Math.floor((health.uptime_seconds % 3600) / 60) + "m" : Math.floor(health.uptime_seconds / 60) + "m")),
+          ),
+        ),
+
+        // Checker cards
+        e("div", {
+          style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340, 1fr))", gap: 12, marginBottom: 24 },
+        },
+          Object.keys(health.checkers).sort().map(function(name) {
+            var c = health.checkers[name];
+            var pctWidth = Math.min(c.success_rate, 100);
+            return e("div", {
+              key: name,
+              style: {
+                background: "#111114", border: "1px solid #1e1e24", borderRadius: 8,
+                padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10,
+              },
+            },
+              // Name + status dot
+              e("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
+                e("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+                  e("span", { style: { width: 8, height: 8, borderRadius: "50%", background: statusColor(c.status), flexShrink: 0 } }),
+                  e("span", { style: { fontSize: 14, fontWeight: 600, color: "#e4e4e7", fontFamily: mono } }, name),
+                ),
+                e("span", {
+                  style: {
+                    padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600,
+                    fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.04em",
+                    background: statusBg(c.status), border: "1px solid " + statusBorder(c.status),
+                    color: statusColor(c.status),
+                  },
+                }, c.status),
+              ),
+
+              // Success rate bar
+              e("div", null,
+                e("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 4 } },
+                  e("span", { style: { fontSize: 11, color: "#71717a", fontFamily: mono } }, "Success Rate"),
+                  e("span", { style: { fontSize: 13, fontWeight: 700, fontFamily: mono, color: statusColor(c.status) } }, c.success_rate + "%"),
+                ),
+                e("div", { style: { height: 4, background: "#1e1e24", borderRadius: 2, overflow: "hidden" } },
+                  e("div", { style: { height: "100%", width: pctWidth + "%", background: statusColor(c.status), borderRadius: 2, transition: "width 0.6s ease" } }),
+                ),
+              ),
+
+              // Stats row
+              e("div", { style: { display: "flex", gap: 16, fontSize: 11, color: "#71717a", fontFamily: mono } },
+                e("span", null, "Checks: " + c.total_checks),
+                e("span", null, "Failures: " + c.failures),
+                e("span", null, "Retries: " + c.retry_count),
+                e("span", null, "Avg: " + c.avg_response_ms + "ms"),
+              ),
+
+              // Last success
+              c.last_success ? e("div", { style: { fontSize: 11, color: "#52525b", fontFamily: mono } },
+                "Last success: " + relativeTime(c.last_success)
+              ) : null,
+
+              // Last error
+              c.last_error ? e("div", {
+                style: { fontSize: 11, color: "#ef4444", opacity: 0.8, fontFamily: mono, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+                title: c.last_error,
+              }, c.last_error) : null,
+            );
+          }),
+        ),
+
+        // No checkers message
+        Object.keys(health.checkers).length === 0 ? e("div", {
+          style: { textAlign: "center", padding: 48, color: "#52525b", fontSize: 14, background: "#111114", border: "1px solid #1e1e24", borderRadius: 8, marginBottom: 24 },
+        }, "No checker activity recorded yet. Run an EOL check to see health data.") : null,
+
+        // Recommendations
+        health.recommendations && health.recommendations.length > 0 ? e("div", { style: { marginBottom: 24 } },
+          e("h2", { style: { fontSize: 14, fontWeight: 600, color: "#e4e4e7", fontFamily: mono, marginBottom: 12 } }, "Recommendations"),
+          health.recommendations.map(function(rec, i) {
+            var isDown = rec.toLowerCase().indexOf("failing") !== -1;
+            return e("div", {
+              key: i,
+              style: {
+                background: isDown ? "#2d1215" : "#1e1b16",
+                border: "1px solid " + (isDown ? "#6b2128" : "#4a3f2f"),
+                borderRadius: 6, padding: "10px 16px", marginBottom: 8,
+                fontSize: 12, color: isDown ? "#ef4444" : "#ca8a04",
+                display: "flex", alignItems: "center", gap: 8,
+              },
+            },
+              e("span", null, isDown ? "\u26A0" : "\u24D8"),
+              e("span", null, rec),
+            );
+          }),
+        ) : null,
+
+        // Footer
+        e("div", { style: { marginTop: 32, paddingTop: 16, borderTop: "1px solid #1e1e24", textAlign: "center" } },
+          e("p", { style: { fontSize: 11, color: "#3a3a42", fontFamily: mono } }, "Auto-refreshes every 30 seconds"),
+        ),
+      ),
+    ),
+  );
+}
+
 function OverridesPage({ onBack }) {
   const [overrides, setOverrides] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -980,6 +1179,7 @@ function App() {
   }, [handleSearch]);
 
   // Processing screen — shown while API is checking raw inventory
+  if (page === "health") return e(HealthPage, { onBack: function() { setPage("main"); } });
   if (page === "overrides") return e(OverridesPage, { onBack: function() { setPage("main"); } });
   if (uploadLoading) {
     return e("div", {
@@ -1282,14 +1482,20 @@ function App() {
           ),
         ),
 
-        // Manual Overrides link
-        e("div", { style: { marginTop: 16, textAlign: "center" } },
+        // Manual Overrides + System Health links
+        e("div", { style: { marginTop: 16, textAlign: "center", display: "flex", justifyContent: "center", gap: 8 } },
           e("button", {
             onClick: function() { setPage("overrides"); },
             style: { padding: "8px 16px", background: "transparent", border: "1px solid #1e1e24", borderRadius: 6, color: "#71717a", fontSize: 12, cursor: "pointer", fontFamily: mono },
             onMouseEnter: function(ev) { ev.currentTarget.style.borderColor = "#3b82f6"; ev.currentTarget.style.color = "#3b82f6"; },
             onMouseLeave: function(ev) { ev.currentTarget.style.borderColor = "#1e1e24"; ev.currentTarget.style.color = "#71717a"; },
           }, "Manage Manual Overrides"),
+          e("button", {
+            onClick: function() { setPage("health"); },
+            style: { padding: "8px 16px", background: "transparent", border: "1px solid #1e1e24", borderRadius: 6, color: "#71717a", fontSize: 12, cursor: "pointer", fontFamily: mono },
+            onMouseEnter: function(ev) { ev.currentTarget.style.borderColor = "#22c55e"; ev.currentTarget.style.color = "#22c55e"; },
+            onMouseLeave: function(ev) { ev.currentTarget.style.borderColor = "#1e1e24"; ev.currentTarget.style.color = "#71717a"; },
+          }, "System Health"),
         ),
 
         // Footer
@@ -1363,6 +1569,15 @@ function App() {
             onMouseEnter: function(ev) { ev.currentTarget.style.borderColor = "#3b82f6"; ev.currentTarget.style.color = "#3b82f6"; },
             onMouseLeave: function(ev) { ev.currentTarget.style.borderColor = "#1e1e24"; ev.currentTarget.style.color = "#71717a"; },
           }, "Manual Overrides"),
+          e("button", {
+            onClick: function() { setPage("health"); },
+            style: {
+              padding: "8px 16px", background: "transparent", border: "1px solid #1e1e24",
+              borderRadius: 6, color: "#71717a", fontSize: 12, cursor: "pointer", fontFamily: mono,
+            },
+            onMouseEnter: function(ev) { ev.currentTarget.style.borderColor = "#22c55e"; ev.currentTarget.style.color = "#22c55e"; },
+            onMouseLeave: function(ev) { ev.currentTarget.style.borderColor = "#1e1e24"; ev.currentTarget.style.color = "#71717a"; },
+          }, "System Health"),
           e("button", {
             onClick: function() { setData(null); },
             style: {

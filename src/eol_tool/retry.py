@@ -110,6 +110,7 @@ async def with_retry(
     func: Callable[..., Awaitable[T]],
     config: RetryConfig | None = None,
     log: logging.Logger | None = None,
+    checker_name: str | None = None,
 ) -> T:
     """Execute func with exponential backoff retry.
 
@@ -158,7 +159,11 @@ async def with_retry(
                 jitter,
                 reason,
             )
-            record_retry_event(log.name.split(".")[-1], reason)
+            record_retry_event(checker_name or log.name.split(".")[-1], reason)
+            if checker_name:
+                from .health import get_checker_health
+
+                get_checker_health().record_retry(checker_name)
             await asyncio.sleep(jitter)
 
     # Should not be reached, but satisfy type checker

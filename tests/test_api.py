@@ -72,7 +72,8 @@ class TestHealth:
         resp = await client.get("/api/health")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["status"] == "ok"
+        assert "overall_status" in data
+        assert "checkers" in data
         assert data["version"] == "2.0.0"
 
 
