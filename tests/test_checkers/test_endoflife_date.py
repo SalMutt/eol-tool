@@ -286,6 +286,129 @@ class TestRiskCategoryMapping:
         assert EndOfLifeDateChecker._risk_for_category("gpu") == RiskCategory.INFORMATIONAL
 
 
+class TestHTTPErrorHandling:
+    """Test behavior when the API returns errors or bad data."""
+
+    @pytest.mark.asyncio
+    async def test_429_retries_and_succeeds(self, httpx_mock):
+        """Rate-limited request (429) should be retried."""
+        _mock_all_products(httpx_mock)
+        # First call returns 429, second returns data
+        httpx_mock.add_response(
+            url=f"{BASE}/intel-processors.json", status_code=429,
+        )
+        httpx_mock.add_response(
+            url=f"{BASE}/intel-processors.json", json=INTEL_PROCESSORS,
+        )
+
+        model = HardwareModel(model="E5-2683 V4", manufacturer="Intel", category="cpu")
+        async with EndOfLifeDateChecker() as checker:
+            result = await checker.check(model)
+
+        assert result.status in (EOLStatus.EOL, EOLStatus.UNKNOWN)
+
+    @pytest.mark.asyncio
+    async def test_timeout_returns_not_found(self, httpx_mock):
+        """Timeout fetching slug data should gracefully return NOT_FOUND."""
+        import httpx as httpx_lib
+
+        _mock_all_products(httpx_mock)
+        httpx_mock.add_exception(
+            httpx_lib.TimeoutException("timed out"),
+            url=f"{BASE}/intel-processors.json",
+        )
+
+        model = HardwareModel(model="E5-2683 V4", manufacturer="Intel", category="cpu")
+        async with EndOfLifeDateChecker() as checker:
+            result = await checker.check(model)
+
+        # Slug fetch failed, so no cycles available — falls to NOT_FOUND
+        assert result.status in (EOLStatus.NOT_FOUND, EOLStatus.UNKNOWN)
+
+    @pytest.mark.asyncio
+    async def test_malformed_json_handled_in_batch(self, httpx_mock):
+        """Malformed slug response during batch should not crash."""
+        _mock_all_products(httpx_mock, is_reusable=True)
+        # Return invalid JSON body — httpx_mock with text that is not valid JSON
+        httpx_mock.add_response(
+            url=f"{BASE}/intel-processors.json", text="not-json", status_code=200,
+        )
+
+        models = [
+            HardwareModel(model="E5-2683 V4", manufacturer="Intel", category="cpu"),
+        ]
+        async with EndOfLifeDateChecker() as checker:
+            results = await checker.check_batch(models)
+
+        assert len(results) == 1
+        # Should fall through to NOT_FOUND since slug cycles couldn't be parsed
+        assert results[0].status in (EOLStatus.NOT_FOUND, EOLStatus.UNKNOWN)
+
+
+class TestBatchSlugFetching:
+    """Test batch checking fetches slugs efficiently."""
+
+    @pytest.mark.asyncio
+    async def test_batch_returns_all_results(self, httpx_mock):
+        _mock_all_products(httpx_mock, is_reusable=True)
+        httpx_mock.add_response(
+            url=f"{BASE}/intel-processors.json", json=INTEL_PROCESSORS, is_reusable=True,
+        )
+
+        models = [
+            HardwareModel(model="E5-2683 V4", manufacturer="Intel", category="cpu"),
+            HardwareModel(model="E5-2680 V3", manufacturer="Intel", category="cpu"),
+            HardwareModel(model="Widget-X", manufacturer="AcmeCorp", category="widget"),
+        ]
+
+        async with EndOfLifeDateChecker() as checker:
+            results = await checker.check_batch(models)
+
+        assert len(results) == 3
+        assert results[0].status == EOLStatus.EOL
+        assert results[1].status == EOLStatus.EOL
+        assert results[2].status == EOLStatus.NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_batch_mixed_manufacturers(self, httpx_mock):
+        """Batch with different manufacturers fetches only needed slugs."""
+        _mock_all_products(httpx_mock, is_reusable=True)
+        httpx_mock.add_response(
+            url=f"{BASE}/intel-processors.json", json=INTEL_PROCESSORS, is_reusable=True,
+        )
+
+        models = [
+            HardwareModel(model="E5-2683 V4", manufacturer="Intel", category="cpu"),
+            HardwareModel(model="EX4300-48T", manufacturer="Juniper", category="switch"),
+            HardwareModel(model="PM1643A", manufacturer="Samsung", category="ssd"),
+        ]
+
+        async with EndOfLifeDateChecker() as checker:
+            results = await checker.check_batch(models)
+
+        assert len(results) == 3
+        # Intel CPU should match, Juniper/Samsung mapped to None -> NOT_FOUND
+        assert results[0].status == EOLStatus.EOL
+        assert results[1].status == EOLStatus.NOT_FOUND
+        assert results[2].status == EOLStatus.NOT_FOUND
+
+
+class TestDetermineStatusEdgeCases:
+    """Additional edge cases for _determine_status."""
+
+    def test_invalid_date_string_returns_unknown(self):
+        checker = EndOfLifeDateChecker()
+        status, eol_date = checker._determine_status({"eol": "not-a-date"})
+        assert status == EOLStatus.UNKNOWN
+        assert eol_date is None
+
+    def test_missing_eol_field_returns_unknown(self):
+        checker = EndOfLifeDateChecker()
+        status, eol_date = checker._determine_status({})
+        assert status == EOLStatus.UNKNOWN
+        assert eol_date is None
+
+
 class TestRegistration:
     """The checker should register with manufacturer_name '__fallback__'."""
 

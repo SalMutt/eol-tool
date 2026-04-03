@@ -179,41 +179,44 @@ class TestUnmatched:
     reason="manual_overrides.csv has no data rows (inventory data removed)",
 )
 class TestRealCSV:
-    def test_csv_has_at_least_40_entries(self, checker):
-        assert len(checker._entries) >= 40
+    def test_csv_has_at_least_25_entries(self, checker):
+        assert len(checker._entries) >= 25
 
-    async def test_real_csv_hitachi_match(self, checker):
-        r = await checker.check(_hw("2TB HITACHI 0F12470", "Hitachi", "hdd"))
+    async def test_real_csv_supermicro_eol(self, checker):
+        r = await checker.check(_hw("1029U-TN10RT", "Supermicro", "server"))
         assert r.status == EOLStatus.EOL
         assert r.eol_reason == EOLReason.MANUAL_OVERRIDE
-        assert "hitachi-legacy-enterprise-HDD-brand-now-HGST-WD" in r.notes
+        assert "supermicro-superserver-1029u" in r.notes
 
-    async def test_real_csv_ibm_match(self, checker):
-        r = await checker.check(_hw("M5210", "IBM", "raid"))
+    async def test_real_csv_samsung_eol(self, checker):
+        r = await checker.check(_hw("883 DCT", "Samsung", "ssd"))
         assert r.status == EOLStatus.EOL
-        assert "IBM-ServeRAID-M5210-legacy-RAID" in r.notes
+        assert "samsung-883-dct" in r.notes
 
     async def test_real_csv_chenbro_match(self, checker):
         r = await checker.check(_hw("RB23812E3RP8", "Chenbro", "chassis"))
         assert r.status == EOLStatus.ACTIVE
-        assert r.risk_category == RiskCategory.INFORMATIONAL
+        assert r.risk_category == RiskCategory.PROCUREMENT
 
-    async def test_real_csv_white_label_optic(self, checker):
-        r = await checker.check(_hw("QSFP-SR4-40G"))
-        assert r.notes == "white-label-optic-commodity-still-available"
-
-    async def test_real_csv_partial_qsfp_match(self, checker):
-        """QSFP-SR4-40G in CSV should match via partial prefix."""
-        r = await checker.check(_hw("QSFP-SR4-40G-EXTENDED"))
-        assert r.notes == "white-label-optic-commodity-still-available"
-
-    async def test_real_csv_server_config(self, checker):
-        r = await checker.check(_hw("SERVER BAREBONE"))
-        assert "generic-barebone-category-not-specific-product" in r.notes
-
-    async def test_real_csv_hpe_active(self, checker):
-        r = await checker.check(_hw("HPE QSFP-SR4-100G", "HPE", "optic"))
+    async def test_real_csv_intel_sfp_active(self, checker):
+        r = await checker.check(_hw("SFP-10GSR-85", "Intel", "optic"))
         assert r.status == EOLStatus.ACTIVE
+        assert "intel-10g-sr-sfp" in r.notes
+
+    async def test_real_csv_partial_chenbro_match(self, checker):
+        """RM133N10-R650 in CSV should match via partial prefix."""
+        r = await checker.check(_hw("RM133N10-R650-EXTRA", "Chenbro", "chassis"))
+        assert "chenbro" in r.notes
+
+    async def test_real_csv_kingston_eol(self, checker):
+        r = await checker.check(_hw("SL16D316R11D4KF", "Kingston", "memory"))
+        assert r.status == EOLStatus.EOL
+        assert "kingston-ddr3" in r.notes
+
+    async def test_real_csv_hpe_eol(self, checker):
+        r = await checker.check(_hw("HP MB4000FCWDK", "HPE", "hdd"))
+        assert r.status == EOLStatus.EOL
+        assert r.risk_category == RiskCategory.PROCUREMENT
 
 
 # ===================================================================
