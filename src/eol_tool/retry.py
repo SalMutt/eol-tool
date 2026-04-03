@@ -99,9 +99,9 @@ def _is_retryable(exc: Exception, config: RetryConfig) -> tuple[bool, str]:
             return True, f"HTTP {status}"
         return False, ""
 
-    # Playwright TimeoutError (string-based check to avoid import dependency)
+    # TimeoutError variants: Playwright TimeoutError, asyncio.TimeoutError, builtins
     if "TimeoutError" in type(exc).__name__ and config.retry_on_timeout:
-        return True, "playwright timeout"
+        return True, "timeout"
 
     return False, ""
 
