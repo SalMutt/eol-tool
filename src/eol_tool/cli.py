@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -379,3 +380,115 @@ def serve(host, port):
 
     click.echo(f"Starting EOL Tool API on {host}:{port}")
     uvicorn.run("eol_tool.api:app", host=host, port=port)
+
+
+@cli.command()
+@click.option("--input", "input_path", required=True, type=click.Path(exists=True),
+              help="Input xlsx file")
+@click.option("--results-dir", "results_dir", default=None,
+              help="Directory for timestamped results")
+@click.option("--interval", "interval_hours", default=None, type=float,
+              help="Check interval in hours (default: 24)")
+@click.option("--ntfy-url", "ntfy_url", default=None, help="ntfy server URL")
+@click.option("--topic", "ntfy_topic", default=None, help="ntfy topic name (required)")
+@click.option("--ntfy-token", "ntfy_token", default=None,
+              help="ntfy auth token (also reads EOL_TOOL_NTFY_TOKEN)")
+@click.option("--notify-on", "notify_on", default=None,
+              type=click.Choice(["critical", "warning", "all", "none"]),
+              help="When to notify (default: warning)")
+@click.option("--keep-results", "keep_results", default=None, type=int,
+              help="Number of result files to keep (default: 10)")
+@click.option("--concurrency", default=None, type=int, help="Checker concurrency (default: 2)")
+@click.option("--manufacturer", default=None, help="Filter to specific manufacturer (default: all)")
+@click.option("--run-once", "run_once", is_flag=True, help="Run a single check and exit")
+@click.option("--dry-run", is_flag=True, help="Run check but don't send notifications")
+def schedule(
+    input_path, results_dir, interval_hours, ntfy_url, ntfy_topic, ntfy_token,
+    notify_on, keep_results, concurrency, manufacturer, run_once, dry_run,
+):
+    """Run scheduled EOL checks with ntfy notifications."""
+    from .scheduler import ScheduleConfig, ScheduledChecker
+
+    # Build config from env var defaults, then override with CLI flags
+    config = ScheduleConfig(input_path=input_path)
+
+    if results_dir is not None:
+        config.results_dir = results_dir
+    if interval_hours is not None:
+        config.interval_hours = interval_hours
+    if ntfy_url is not None:
+        config.ntfy_url = ntfy_url
+    if ntfy_topic is not None:
+        config.ntfy_topic = ntfy_topic
+    if ntfy_token is not None:
+        config.ntfy_token = ntfy_token
+    if notify_on is not None:
+        config.notify_on = notify_on
+    if keep_results is not None:
+        config.keep_results = keep_results
+    if concurrency is not None:
+        config.concurrency = concurrency
+    if manufacturer is not None:
+        config.manufacturer = manufacturer
+
+    if dry_run:
+        config.notify_on = "none"
+
+    if not config.ntfy_topic:
+        click.echo("Error: --topic is required (or set EOL_TOOL_NTFY_TOPIC)")
+        raise SystemExit(1)
+
+    Path(config.results_dir).mkdir(parents=True, exist_ok=True)
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+    click.echo(
+        f"Starting scheduled EOL checks every {config.interval_hours} hours, "
+        f"notifying {config.ntfy_topic} on {config.notify_on} changes"
+    )
+
+    checker = ScheduledChecker(config)
+
+    if run_once:
+        from .diff import has_critical_changes as _has_critical
+
+        diff_result = asyncio.run(checker.run_once())
+        if diff_result and _has_critical(diff_result):
+            raise SystemExit(1)
+    else:
+        asyncio.run(checker.run_loop())
+
+
+@cli.command()
+@click.option("--topic", required=True, help="ntfy topic name")
+@click.option("--message", required=True, help="Message to send")
+@click.option("--ntfy-url", "ntfy_url", default=None, help="ntfy server URL (default: https://ntfy.sh)")
+@click.option("--ntfy-token", "ntfy_token", default=None, help="ntfy auth token")
+@click.option("--priority", default="3", help="Notification priority 1-5 (default: 3)")
+def notify(topic, message, ntfy_url, ntfy_token, priority):
+    """Send a test notification to verify ntfy configuration."""
+    import httpx
+
+    url_base = ntfy_url or os.environ.get("EOL_TOOL_NTFY_URL", "https://ntfy.sh")
+    token = ntfy_token or os.environ.get("EOL_TOOL_NTFY_TOKEN")
+
+    headers = {
+        "Title": "EOL Tool Test",
+        "Priority": priority,
+        "Tags": "test_tube",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    url = f"{url_base.rstrip('/')}/{topic}"
+
+    try:
+        resp = httpx.post(url, content=message, headers=headers, timeout=10.0)
+        resp.raise_for_status()
+        click.echo(f"Notification sent to {topic}")
+    except Exception as exc:
+        click.echo(f"Failed to send notification: {exc}")
+        raise SystemExit(1)

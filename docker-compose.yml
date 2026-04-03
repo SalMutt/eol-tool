@@ -12,5 +12,23 @@ services:
     environment:
       - EOL_TOOL_CACHE_DIR=/root/.cache/eol-tool
       - EOL_TOOL_DATA_DIR=/app/data
+
+  eol-tool-scheduler:
+    container_name: eol-tool-scheduler
+    build: .
+    image: salmutt/eol-tool:latest
+    volumes:
+      - ./data:/app/data
+      - ./results:/app/results
+      - eol-cache:/root/.cache/eol-tool
+    restart: unless-stopped
+    environment:
+      - EOL_TOOL_DATA_DIR=/app/data
+      - EOL_TOOL_CACHE_DIR=/root/.cache/eol-tool
+      - EOL_TOOL_RESULTS_DIR=/app/results
+      - EOL_TOOL_NTFY_TOPIC=eol-checks
+      - EOL_TOOL_SCHEDULE_INTERVAL=24
+    command: ["eol-tool", "schedule", "--input", "/app/data/eol_models_cleaned.xlsx", "--results-dir", "/app/results"]
+
 volumes:
   eol-cache:
