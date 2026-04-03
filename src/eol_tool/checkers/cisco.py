@@ -15,6 +15,7 @@ from urllib.parse import quote_plus
 
 from ..checker import BaseChecker
 from ..models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategory
+from ..retry import RetryConfig, RetryExhausted, with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -210,10 +211,19 @@ class CiscoChecker(BaseChecker):
 
         # Try Playwright scraping with hard timeout
         if PLAYWRIGHT_AVAILABLE and self._browser and not self._checker_disabled:
-            try:
-                bulletin_data = await asyncio.wait_for(
+            playwright_config = RetryConfig.from_env(
+                max_retries=2, base_delay=5.0,
+            )
+
+            async def _do_scrape():
+                return await asyncio.wait_for(
                     self._scrape_bulletin(normalized),
                     timeout=_SCRAPE_TIMEOUT_SECONDS,
+                )
+
+            try:
+                bulletin_data = await with_retry(
+                    _do_scrape, config=playwright_config, log=logger,
                 )
                 if bulletin_data and (
                     bulletin_data.get("eol_date") or bulletin_data.get("eos_date")
@@ -224,11 +234,10 @@ class CiscoChecker(BaseChecker):
                     finally:
                         conn.close()
                     return _cached_to_result(model, bulletin_data)
-            except asyncio.TimeoutError:
+            except (RetryExhausted, asyncio.TimeoutError):
                 logger.warning(
-                    "Cisco lookup for %s exceeded %ds timeout, using static rules",
+                    "Cisco lookup for %s failed after retries, using static rules",
                     normalized,
-                    _SCRAPE_TIMEOUT_SECONDS,
                 )
 
         # Fall back to static classification
