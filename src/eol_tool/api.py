@@ -1,12 +1,12 @@
 """FastAPI application wrapping eol-tool functionality."""
 
+import asyncio
 import csv
 import io
 import json
 import logging
 import os
 import re
-import threading
 from datetime import datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -44,7 +44,7 @@ _CSV_FIELDS = [
     "eol_date", "eos_date", "source_url", "notes",
 ]
 
-_csv_lock = threading.Lock()
+_csv_lock = asyncio.Lock()
 
 
 class OverrideBody(BaseModel):
@@ -135,7 +135,7 @@ app = FastAPI(title="EOL Tool API", version=__version__)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -257,10 +257,6 @@ def _find_latest_results(results_dir: Path | None = None) -> Path | None:
     return files[0] if files else None
 
 
-# Set by scheduler when running; allows /api/status to report next check time
-_next_scheduled_check: str | None = None
-
-
 @app.get("/api/status")
 async def status():
     """System status: last check info, counts, and cache stats."""
@@ -275,7 +271,7 @@ async def status():
         "active_count": 0,
         "unknown_count": 0,
         "cache_stats": None,
-        "next_scheduled_check": _next_scheduled_check,
+        "next_scheduled_check": None,
     }
 
     if latest:
@@ -465,7 +461,7 @@ async def sources():
 @app.get("/api/overrides")
 async def list_overrides():
     """Return all manual overrides as a JSON array."""
-    with _csv_lock:
+    async with _csv_lock:
         rows = _read_overrides_csv(get_csv_path())
     return [
         {k: row.get(k, "") for k in _CSV_FIELDS}
@@ -478,7 +474,7 @@ async def list_overrides():
 async def create_override(body: OverrideBody):
     """Add a new manual override."""
     new_key = (body.model.lower(), body.manufacturer.strip().lower())
-    with _csv_lock:
+    async with _csv_lock:
         rows = _read_overrides_csv(get_csv_path())
         for row in rows:
             if _override_key(row) == new_key:
@@ -497,7 +493,7 @@ async def create_override(body: OverrideBody):
 async def update_override(body: OverrideBody):
     """Update an existing manual override identified by model+manufacturer."""
     target_key = (body.model.lower(), body.manufacturer.strip().lower())
-    with _csv_lock:
+    async with _csv_lock:
         rows = _read_overrides_csv(get_csv_path())
         found = False
         for i, row in enumerate(rows):
@@ -522,7 +518,7 @@ async def delete_override(
 ):
     """Delete a manual override by model+manufacturer."""
     target_key = (model.strip().lower(), manufacturer.strip().lower())
-    with _csv_lock:
+    async with _csv_lock:
         rows = _read_overrides_csv(get_csv_path())
         new_rows = [r for r in rows if _override_key(r) != target_key]
         if len(new_rows) == len(rows):
@@ -538,7 +534,7 @@ async def delete_override(
 @app.get("/api/overrides/export")
 async def export_overrides():
     """Download the overrides CSV file."""
-    with _csv_lock:
+    async with _csv_lock:
         rows = _read_overrides_csv(get_csv_path())
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=_CSV_FIELDS)
@@ -566,7 +562,7 @@ async def import_overrides(file: UploadFile = File(...)):
     reader = csv.DictReader(io.StringIO(content))
     incoming = list(reader)
 
-    with _csv_lock:
+    async with _csv_lock:
         existing = _read_overrides_csv(get_csv_path())
         existing_map: dict[tuple[str, str], int] = {}
         for i, row in enumerate(existing):

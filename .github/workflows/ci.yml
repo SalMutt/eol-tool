@@ -19,6 +19,10 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev,api]"
 
+      - name: Audit dependencies
+        run: pip install pip-audit && pip-audit
+        continue-on-error: true
+
       - name: Lint
         run: ruff check src/ tests/
 
@@ -60,6 +64,9 @@ jobs:
       - name: Health check
         run: |
           docker run -d -p 8080:8080 --name test-eol salmutt/eol-tool:latest
-          sleep 10
-          curl -f http://localhost:8080/api/health
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8080/api/health && exit 0
+            sleep 2
+          done
+          echo "Health check failed after 60s" && exit 1
           docker stop test-eol

@@ -28,6 +28,9 @@ class BaseChecker(ABC):
         self._semaphore = asyncio.Semaphore(self.rate_limit)
         self._client: httpx.AsyncClient | None = None
 
+    def set_concurrency(self, n: int) -> None:
+        self._semaphore = asyncio.Semaphore(n)
+
     async def __aenter__(self) -> "BaseChecker":
         self._client = httpx.AsyncClient(
             http2=True,

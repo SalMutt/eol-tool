@@ -38,6 +38,26 @@ def clear_retry_events() -> None:
     _retry_events.clear()
 
 
+def _parse_env_int(name: str, default: int) -> int:
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    try:
+        return int(val)
+    except ValueError:
+        raise ValueError(f"Environment variable {name} must be an integer, got: {val!r}")
+
+
+def _parse_env_float(name: str, default: float) -> float:
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    try:
+        return float(val)
+    except ValueError:
+        raise ValueError(f"Environment variable {name} must be a float, got: {val!r}")
+
+
 def _default_retry_on_status() -> set[int]:
     return {429, 500, 502, 503, 504}
 
@@ -60,8 +80,8 @@ class RetryConfig:
         Explicit keyword overrides take precedence over env vars.
         """
         defaults = {
-            "max_retries": int(os.environ.get("EOL_TOOL_RETRY_MAX", "3")),
-            "base_delay": float(os.environ.get("EOL_TOOL_RETRY_BASE_DELAY", "2.0")),
+            "max_retries": _parse_env_int("EOL_TOOL_RETRY_MAX", 3),
+            "base_delay": _parse_env_float("EOL_TOOL_RETRY_BASE_DELAY", 2.0),
         }
         defaults.update(overrides)
         return cls(**defaults)

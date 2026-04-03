@@ -6,6 +6,7 @@ Only uses Playwright for scraping. Only processes CPU category models -
 NICs, SSDs, and optics are left to the static intel.py checker.
 """
 
+import asyncio
 import logging
 import re
 import sqlite3
@@ -127,6 +128,29 @@ def _parse_date(date_str: str) -> date | None:
     return None
 
 
+# ── Async cache wrappers ────────────────────────────────────────────
+
+
+async def _async_cache_get(key: str) -> dict | None:
+    def _sync():
+        conn = _init_cache_db()
+        try:
+            return _get_cached(conn, key)
+        finally:
+            conn.close()
+    return await asyncio.to_thread(_sync)
+
+
+async def _async_cache_set(key: str, data: dict) -> None:
+    def _sync():
+        conn = _init_cache_db()
+        try:
+            _set_cached(conn, key, data)
+        finally:
+            conn.close()
+    await asyncio.to_thread(_sync)
+
+
 # ── Checker ──────────────────────────────────────────────────────────
 
 
@@ -181,43 +205,39 @@ class IntelARKChecker(BaseChecker):
             return self._make_not_found(model, "checker-disabled-chromium-missing")
 
         model_key = _normalize_key(model.model)
-        conn = _init_cache_db()
+        cached = await _async_cache_get(model_key)
+        if cached is not None:
+            logger.info("ARK cache hit: %s", model_key)
+            return _to_result(model, cached)
+
+        playwright_config = RetryConfig.from_env(
+            max_retries=2, base_delay=5.0,
+        )
+
+        async def _do_lookup():
+            result = await self._playwright_lookup(model_key)
+            if result and result.get("result_status") == "timeout":
+                raise TimeoutError(f"Playwright timeout for {model_key}")
+            return result
+
         try:
-            cached = _get_cached(conn, model_key)
-            if cached is not None:
-                logger.info("ARK cache hit: %s", model_key)
-                return _to_result(model, cached)
+            data = await with_retry(_do_lookup, config=playwright_config, log=logger)
+        except RetryExhausted:
+            logger.warning("Intel ARK retries exhausted for %s", model_key)
+            data = {"result_status": "timeout"}
+        except TimeoutError:
+            data = {"result_status": "timeout"}
 
-            playwright_config = RetryConfig.from_env(
-                max_retries=2, base_delay=5.0,
-            )
+        if data is None:
+            await _async_cache_set(model_key, {"result_status": "not_found"})
+            return self._make_not_found(model, "not-found-on-intel-ark")
 
-            async def _do_lookup():
-                result = await self._playwright_lookup(model_key)
-                if result and result.get("result_status") == "timeout":
-                    raise TimeoutError(f"Playwright timeout for {model_key}")
-                return result
+        if data.get("result_status") == "timeout":
+            await _async_cache_set(model_key, {"result_status": "not_found"})
+            return self._make_not_found(model, "page-timeout")
 
-            try:
-                data = await with_retry(_do_lookup, config=playwright_config, log=logger)
-            except RetryExhausted:
-                logger.warning("Intel ARK retries exhausted for %s", model_key)
-                data = {"result_status": "timeout"}
-            except TimeoutError:
-                data = {"result_status": "timeout"}
-
-            if data is None:
-                _set_cached(conn, model_key, {"result_status": "not_found"})
-                return self._make_not_found(model, "not-found-on-intel-ark")
-
-            if data.get("result_status") == "timeout":
-                _set_cached(conn, model_key, {"result_status": "not_found"})
-                return self._make_not_found(model, "page-timeout")
-
-            _set_cached(conn, model_key, data)
-            return _to_result(model, data)
-        finally:
-            conn.close()
+        await _async_cache_set(model_key, data)
+        return _to_result(model, data)
 
     # ── Playwright lookup ────────────────────────────────────────
 

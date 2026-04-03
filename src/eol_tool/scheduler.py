@@ -18,6 +18,16 @@ from .reader import read_models, write_results
 logger = logging.getLogger(__name__)
 
 
+def _parse_env_float(name: str, default: float) -> float:
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    try:
+        return float(val)
+    except ValueError:
+        raise ValueError(f"Environment variable {name} must be a float, got: {val!r}")
+
+
 @dataclass
 class ScheduleConfig:
     """Configuration for scheduled EOL checks."""
@@ -27,7 +37,7 @@ class ScheduleConfig:
         default_factory=lambda: os.environ.get("EOL_TOOL_RESULTS_DIR", "./results")
     )
     interval_hours: float = field(
-        default_factory=lambda: float(os.environ.get("EOL_TOOL_SCHEDULE_INTERVAL", "24"))
+        default_factory=lambda: _parse_env_float("EOL_TOOL_SCHEDULE_INTERVAL", 24.0)
     )
     ntfy_url: str = field(
         default_factory=lambda: os.environ.get("EOL_TOOL_NTFY_URL", "https://ntfy.sh")

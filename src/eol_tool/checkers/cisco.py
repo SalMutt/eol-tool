@@ -152,6 +152,29 @@ _REGEX_RULES: list[tuple[re.Pattern, EOLStatus, RiskCategory, str, EOLReason]] =
 ]
 
 
+# -- Async cache wrappers ------------------------------------------------
+
+
+async def _async_cache_get(key: str) -> dict | None:
+    def _sync():
+        conn = _init_cache_db()
+        try:
+            return _get_cached(conn, key)
+        finally:
+            conn.close()
+    return await asyncio.to_thread(_sync)
+
+
+async def _async_cache_set(key: str, data: dict) -> None:
+    def _sync():
+        conn = _init_cache_db()
+        try:
+            _set_cached(conn, key, data)
+        finally:
+            conn.close()
+    await asyncio.to_thread(_sync)
+
+
 # -- Checker -------------------------------------------------------------
 
 
@@ -198,16 +221,12 @@ class CiscoChecker(BaseChecker):
         normalized = self._normalize(model.model)
 
         # Try SQLite cache first
-        conn = _init_cache_db()
-        try:
-            cached = _get_cached(conn, normalized)
-            if cached is not None:
-                if cached.get("eol_date") or cached.get("eos_date"):
-                    logger.info("Cisco cache hit with dates: %s", normalized)
-                    return _cached_to_result(model, cached)
-                # Cached but no dates -- fall through to static
-        finally:
-            conn.close()
+        cached = await _async_cache_get(normalized)
+        if cached is not None:
+            if cached.get("eol_date") or cached.get("eos_date"):
+                logger.info("Cisco cache hit with dates: %s", normalized)
+                return _cached_to_result(model, cached)
+            # Cached but no dates -- fall through to static
 
         # Try Playwright scraping with hard timeout
         if PLAYWRIGHT_AVAILABLE and self._browser and not self._checker_disabled:
@@ -228,11 +247,7 @@ class CiscoChecker(BaseChecker):
                 if bulletin_data and (
                     bulletin_data.get("eol_date") or bulletin_data.get("eos_date")
                 ):
-                    conn = _init_cache_db()
-                    try:
-                        _set_cached(conn, normalized, bulletin_data)
-                    finally:
-                        conn.close()
+                    await _async_cache_set(normalized, bulletin_data)
                     return _cached_to_result(model, bulletin_data)
             except (RetryExhausted, asyncio.TimeoutError):
                 logger.warning(

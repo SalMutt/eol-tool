@@ -1,6 +1,5 @@
 """Check pipeline for selecting the best EOL result from multiple checkers."""
 
-import asyncio
 import logging
 from datetime import datetime
 
@@ -147,7 +146,7 @@ async def run_check_pipeline(
             for checker_cls in checker_classes:
                 try:
                     checker = checker_cls()
-                    checker._semaphore = asyncio.Semaphore(concurrency)
+                    checker.set_concurrency(concurrency)
                     async with checker:
                         checker_results = await checker.check_batch(to_check)
                     for i, r in enumerate(checker_results):

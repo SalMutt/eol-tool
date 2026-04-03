@@ -113,7 +113,7 @@ def read_results(path: Path) -> list[EOLResult]:
             if eol_date_str:
                 try:
                     if isinstance(eol_date_raw, date):
-                        eol_date = eol_date_raw if isinstance(eol_date_raw, date) else None
+                        eol_date = eol_date_raw
                     else:
                         eol_date = date.fromisoformat(eol_date_str)
                 except (ValueError, TypeError):

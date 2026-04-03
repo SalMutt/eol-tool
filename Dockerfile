@@ -11,11 +11,14 @@ RUN useradd -m -r -s /bin/false appuser
 
 WORKDIR /app
 
-COPY . .
-
+COPY pyproject.toml .
+RUN mkdir -p src/eol_tool && echo '__version__ = "0.0.0"' > src/eol_tool/__init__.py
 RUN pip install --no-cache-dir ".[api]"
 
 RUN playwright install chromium
+
+COPY . .
+RUN pip install --no-cache-dir -e . --no-deps
 
 RUN chown -R appuser:appuser /app
 USER appuser

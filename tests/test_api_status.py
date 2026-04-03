@@ -109,10 +109,7 @@ class TestApiStatus:
         results_dir = tmp_path / "results"
         _write_results_file(results_dir)
 
-        with (
-            patch("eol_tool.api._get_results_dir", return_value=results_dir),
-            patch("eol_tool.api._next_scheduled_check", None),
-        ):
+        with patch("eol_tool.api._get_results_dir", return_value=results_dir):
             resp = await client.get("/api/status")
         data = resp.json()
         assert data["next_scheduled_check"] is None

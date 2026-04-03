@@ -9,6 +9,12 @@ services:
       - ./data:/app/data
       - eol-cache:/home/appuser/.cache/eol-tool
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     environment:
       - EOL_TOOL_CACHE_DIR=/home/appuser/.cache/eol-tool
       - EOL_TOOL_DATA_DIR=/app/data
