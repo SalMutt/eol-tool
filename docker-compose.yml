@@ -11,6 +11,6 @@ services:
     restart: unless-stopped
     environment:
       - EOL_TOOL_CACHE_DIR=/root/.cache/eol-tool
-
+      - EOL_TOOL_DATA_DIR=/app/data
 volumes:
   eol-cache:

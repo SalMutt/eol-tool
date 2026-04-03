@@ -8,14 +8,12 @@ last checker in the priority chain before returning UNKNOWN.
 import csv
 import logging
 from datetime import date, datetime
-from pathlib import Path
 
 from ..checker import BaseChecker
 from ..models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategory
+from ..paths import get_overrides_csv
 
 logger = logging.getLogger(__name__)
-
-_CSV_PATH = Path(__file__).resolve().parent.parent.parent.parent / "data" / "manual_overrides.csv"
 
 _STATUS_MAP = {
     "eol": EOLStatus.EOL,
@@ -104,10 +102,11 @@ class ManualChecker(BaseChecker):
         self._load_csv()
 
     def _load_csv(self) -> None:
-        if not _CSV_PATH.exists():
-            logger.warning("Manual overrides CSV not found: %s", _CSV_PATH)
+        csv_path = get_overrides_csv()
+        if not csv_path.exists():
+            logger.warning("Manual overrides CSV not found: %s", csv_path)
             return
-        with open(_CSV_PATH, newline="", encoding="utf-8") as fh:
+        with open(csv_path, newline="", encoding="utf-8") as fh:
             reader = csv.DictReader(fh)
             for row in reader:
                 entry = _OverrideEntry(row)

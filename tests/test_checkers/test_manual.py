@@ -77,7 +77,7 @@ def tmp_checker(tmp_path):
             "notes": "test-active",
         },
     ])
-    with patch("eol_tool.checkers.manual._CSV_PATH", csv_path):
+    with patch("eol_tool.checkers.manual.get_overrides_csv", return_value=csv_path):
         return ManualChecker()
 
 

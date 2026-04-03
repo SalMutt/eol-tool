@@ -23,6 +23,7 @@ from .input_filter import filter_models
 from .manufacturer_corrections import apply_manufacturer_corrections
 from .models import EOLResult, HardwareModel
 from .normalizer import normalize_model
+from .paths import get_overrides_csv
 from .reader import read_models
 from .registry import list_checkers
 
@@ -40,7 +41,6 @@ _CSV_FIELDS = [
     "eol_date", "eos_date", "source_url", "notes",
 ]
 
-_CSV_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "manual_overrides.csv"
 _csv_lock = threading.Lock()
 
 
@@ -99,7 +99,7 @@ class OverrideDeleteParams(BaseModel):
 
 
 def _read_overrides_csv(csv_path: Path | None = None) -> list[dict[str, str]]:
-    path = csv_path or _CSV_PATH
+    path = csv_path or get_overrides_csv()
     if not path.exists():
         return []
     with open(path, newline="", encoding="utf-8") as fh:
@@ -107,7 +107,7 @@ def _read_overrides_csv(csv_path: Path | None = None) -> list[dict[str, str]]:
 
 
 def _write_overrides_csv(rows: list[dict[str, str]], csv_path: Path | None = None) -> None:
-    path = csv_path or _CSV_PATH
+    path = csv_path or get_overrides_csv()
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".csv.tmp")
     with open(tmp, "w", newline="", encoding="utf-8") as fh:
@@ -124,7 +124,7 @@ def _override_key(row: dict[str, str]) -> tuple[str, str]:
 
 def get_csv_path() -> Path:
     """Return the CSV path. Allows tests to override."""
-    return _CSV_PATH
+    return get_overrides_csv()
 
 
 app = FastAPI(title="EOL Tool API", version=__version__)
