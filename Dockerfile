@@ -20,7 +20,7 @@ RUN playwright install chromium
 COPY . .
 RUN pip install --no-cache-dir -e . --no-deps
 
-RUN chown -R appuser:appuser /app
+RUN mkdir -p /home/appuser/.cache/eol-tool && chown -R appuser:appuser /app /home/appuser
 USER appuser
 
 EXPOSE 8080
