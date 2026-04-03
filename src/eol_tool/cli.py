@@ -16,6 +16,7 @@ from .manufacturer_corrections import apply_manufacturer_corrections
 from .models import EOLResult, EOLStatus, HardwareModel, RiskCategory
 from .reader import read_models, split_results_for_retry, write_results
 from .registry import list_checkers as _list_checkers
+from .retry import clear_retry_events, get_retry_summary
 
 # Checkers that have a refresh_cache classmethod, keyed by source name
 _REFRESHABLE_SOURCES: dict[str, str] = {
@@ -39,6 +40,7 @@ async def _run_with_progress(
     skip_fallback: bool,
 ) -> list[EOLResult]:
     """Run check pipeline with CLI progress output."""
+    clear_retry_events()
     from .cache import ResultCache
     from .check_pipeline import run_check_pipeline
 
@@ -83,6 +85,9 @@ async def _run_with_progress(
         ]
         if parts:
             click.echo(f"  Done: {', '.join(parts)}")
+        retry_summary = get_retry_summary()
+        if retry_summary:
+            click.echo(f"  {retry_summary}")
 
         return results
     finally:

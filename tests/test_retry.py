@@ -6,7 +6,14 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from eol_tool.retry import RetryConfig, RetryExhausted, with_retry
+from eol_tool.retry import (
+    RetryConfig,
+    RetryExhausted,
+    clear_retry_events,
+    get_retry_summary,
+    record_retry_event,
+    with_retry,
+)
 
 
 @pytest.mark.asyncio
@@ -302,3 +309,18 @@ async def test_retries_on_502_503_504():
             result = await with_retry(func, config=RetryConfig())
         assert result.status_code == 200
         call_count = 0
+
+
+def test_retry_summary_tracking():
+    """Retry events are tracked and summarized."""
+    clear_retry_events()
+    record_retry_event("intel-ark", "timeout")
+    record_retry_event("intel-ark", "timeout")
+    record_retry_event("endoflife_date", "HTTP 429")
+    summary = get_retry_summary()
+    assert summary is not None
+    assert "3 retries" in summary
+    assert "intel-ark timeout" in summary
+    assert "endoflife_date HTTP 429" in summary
+    clear_retry_events()
+    assert get_retry_summary() is None

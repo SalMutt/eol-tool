@@ -13,6 +13,30 @@ T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
 
+# Module-level retry event tracker for CLI summary
+_retry_events: list[tuple[str, str]] = []  # (source, reason)
+
+
+def record_retry_event(source: str, reason: str) -> None:
+    """Record a retry event for end-of-run summary."""
+    _retry_events.append((source, reason))
+
+
+def get_retry_summary() -> str | None:
+    """Return a human-readable retry summary, or None if no retries occurred."""
+    if not _retry_events:
+        return None
+    from collections import Counter
+    counts = Counter(_retry_events)
+    total = len(_retry_events)
+    parts = [f"{count} {source} {reason}" for (source, reason), count in counts.most_common()]
+    return f"Note: {total} retries occurred ({', '.join(parts)})"
+
+
+def clear_retry_events() -> None:
+    """Clear retry events (call at start of a new run)."""
+    _retry_events.clear()
+
 
 def _default_retry_on_status() -> set[int]:
     return {429, 500, 502, 503, 504}
@@ -134,6 +158,7 @@ async def with_retry(
                 jitter,
                 reason,
             )
+            record_retry_event(log.name.split(".")[-1], reason)
             await asyncio.sleep(jitter)
 
     # Should not be reached, but satisfy type checker
