@@ -308,15 +308,18 @@ class TestHTTPErrorHandling:
         assert result.status in (EOLStatus.EOL, EOLStatus.UNKNOWN)
 
     @pytest.mark.asyncio
-    async def test_timeout_returns_not_found(self, httpx_mock):
+    async def test_timeout_returns_not_found(self, httpx_mock, monkeypatch):
         """Timeout fetching slug data should gracefully return NOT_FOUND."""
         import httpx as httpx_lib
 
+        monkeypatch.setenv("EOL_TOOL_RETRY_BASE_DELAY", "0")
         _mock_all_products(httpx_mock)
-        httpx_mock.add_exception(
-            httpx_lib.TimeoutException("timed out"),
-            url=f"{BASE}/intel-processors.json",
-        )
+        # with_retry retries timeouts up to max_retries (default 3) times, so 4 total
+        for _ in range(4):
+            httpx_mock.add_exception(
+                httpx_lib.TimeoutException("timed out"),
+                url=f"{BASE}/intel-processors.json",
+            )
 
         model = HardwareModel(model="E5-2683 V4", manufacturer="Intel", category="cpu")
         async with EndOfLifeDateChecker() as checker:

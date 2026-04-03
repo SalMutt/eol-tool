@@ -439,9 +439,10 @@ class TestBatchCheck:
         assert r.status == EOLStatus.EOL
         assert r.confidence == 90
 
-    async def test_listing_fetch_failure_still_classifies(self, httpx_mock):
-        # _fetch retries 3 times on 500
-        for _ in range(3):
+    async def test_listing_fetch_failure_still_classifies(self, httpx_mock, monkeypatch):
+        monkeypatch.setenv("EOL_TOOL_RETRY_BASE_DELAY", "0")
+        # _fetch retries up to max_retries (default 3) times on 500, so 4 total attempts
+        for _ in range(4):
             httpx_mock.add_response(
                 url="https://support.juniper.net/support/eol/",
                 status_code=500,

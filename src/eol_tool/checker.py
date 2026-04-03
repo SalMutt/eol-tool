@@ -9,6 +9,7 @@ from typing import ClassVar
 import httpx
 
 from .models import EOLResult, EOLStatus, HardwareModel
+from .retry import RetryConfig, with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -63,29 +64,17 @@ class BaseChecker(ABC):
         return list(await asyncio.gather(*[_limited_check(m) for m in models]))
 
     async def _fetch(self, url: str, **kwargs) -> httpx.Response:
-        """Rate-limited HTTP GET with retries."""
+        """Rate-limited HTTP GET with retry."""
         assert self._client is not None, "Use checker as async context manager"
         logger.info("Fetching %s...", url)
-        async with self._semaphore:
-            for attempt in range(3):
-                try:
-                    response = await self._client.get(url, **kwargs)
-                except httpx.TimeoutException:
-                    logger.warning("Timeout fetching %s after 10s", url)
-                    raise
-                if response.status_code == 429 or response.status_code >= 500:
-                    await asyncio.sleep(2**attempt)
-                    continue
-                try:
-                    response.raise_for_status()
-                except httpx.HTTPStatusError as exc:
-                    logger.warning("Failed to fetch %s: %s", url, exc)
-                    raise
-                logger.info("Fetched %s (%s)", url, response.status_code)
-                return response
-            logger.warning(
-                "Failed to fetch %s: HTTP %s after retries",
-                url, response.status_code,
-            )
+
+        config = RetryConfig.from_env()
+
+        async def _do_fetch() -> httpx.Response:
+            response = await self._client.get(url, **kwargs)
             response.raise_for_status()
             return response
+
+        response = await with_retry(_do_fetch, config=config, log=logger)
+        logger.info("Fetched %s (%s)", url, response.status_code)
+        return response
