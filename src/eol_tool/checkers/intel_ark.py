@@ -14,6 +14,7 @@ from pathlib import Path
 
 from ..checker import BaseChecker
 from ..models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategory
+from ..retry import RetryConfig, RetryExhausted, with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -187,7 +188,23 @@ class IntelARKChecker(BaseChecker):
                 logger.info("ARK cache hit: %s", model_key)
                 return _to_result(model, cached)
 
-            data = await self._playwright_lookup(model_key)
+            playwright_config = RetryConfig.from_env(
+                max_retries=2, base_delay=5.0,
+            )
+
+            async def _do_lookup():
+                result = await self._playwright_lookup(model_key)
+                if result and result.get("result_status") == "timeout":
+                    raise TimeoutError(f"Playwright timeout for {model_key}")
+                return result
+
+            try:
+                data = await with_retry(_do_lookup, config=playwright_config, log=logger)
+            except RetryExhausted:
+                logger.warning("Intel ARK retries exhausted for %s", model_key)
+                data = {"result_status": "timeout"}
+            except TimeoutError:
+                data = {"result_status": "timeout"}
 
             if data is None:
                 _set_cached(conn, model_key, {"result_status": "not_found"})
