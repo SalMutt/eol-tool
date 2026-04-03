@@ -74,7 +74,7 @@ class TestHealth:
         data = resp.json()
         assert "overall_status" in data
         assert "checkers" in data
-        assert data["version"] == "2.0.0"
+        assert data["version"] == "2.1.0"
 
 
 class TestFrontendRoot:
