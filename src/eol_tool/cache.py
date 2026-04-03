@@ -5,7 +5,7 @@ from pathlib import Path
 
 import aiosqlite
 
-from .models import EOLResult, EOLStatus, HardwareModel
+from .models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategory
 
 _DEFAULT_DB = Path.home() / ".cache" / "eol-tool" / "results.db"
 
@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS results (
     checked_at TEXT NOT NULL,
     confidence INTEGER DEFAULT 0,
     notes TEXT,
+    eol_reason TEXT DEFAULT 'none',
+    risk_category TEXT DEFAULT 'none',
+    date_source TEXT DEFAULT 'none',
     PRIMARY KEY (model, manufacturer)
 )
 """
@@ -50,6 +53,18 @@ class ResultCache:
             self._db = await aiosqlite.connect(str(self._db_path))
             await self._db.execute(_CREATE_TABLE)
             await self._db.execute(_CREATE_SOURCE_CACHE_TABLE)
+            # Migrate old schema: add columns that may be missing
+            for col, default in [
+                ("eol_reason", "none"),
+                ("risk_category", "none"),
+                ("date_source", "none"),
+            ]:
+                try:
+                    await self._db.execute(
+                        f"ALTER TABLE results ADD COLUMN {col} TEXT DEFAULT '{default}'"
+                    )
+                except Exception:
+                    pass  # column already exists
             await self._db.commit()
         return self._db
 
@@ -88,6 +103,9 @@ class ResultCache:
             checked_at=checked_at,
             confidence=row[8] or 0,
             notes=row[9] or "",
+            eol_reason=EOLReason(row[10]) if row[10] else EOLReason.NONE,
+            risk_category=RiskCategory(row[11]) if row[11] else RiskCategory.NONE,
+            date_source=row[12] or "none",
         )
 
     async def set(self, result: EOLResult) -> None:
@@ -95,8 +113,9 @@ class ResultCache:
         await db.execute(
             """INSERT OR REPLACE INTO results
                (model, manufacturer, status, eol_date, eos_date,
-                source_url, source_name, checked_at, confidence, notes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                source_url, source_name, checked_at, confidence, notes,
+                eol_reason, risk_category, date_source)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 result.model.model,
                 result.model.manufacturer,
@@ -108,6 +127,9 @@ class ResultCache:
                 result.checked_at.isoformat(),
                 result.confidence,
                 result.notes,
+                result.eol_reason.value,
+                result.risk_category.value,
+                result.date_source,
             ),
         )
         await db.commit()

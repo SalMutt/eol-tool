@@ -7,6 +7,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 libatspi2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
+RUN useradd -m -r -s /bin/false appuser
+
 WORKDIR /app
 
 COPY . .
@@ -14,6 +16,9 @@ COPY . .
 RUN pip install --no-cache-dir ".[api]"
 
 RUN playwright install chromium
+
+RUN chown -R appuser:appuser /app
+USER appuser
 
 EXPOSE 8080
 

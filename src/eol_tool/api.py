@@ -347,12 +347,21 @@ async def lookup(
     return _result_to_dict(r)
 
 
+_MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
 @app.post("/api/check")
 async def check_upload(file: UploadFile = File(...)):
     """Upload an xlsx file and run the full check pipeline."""
     suffix = ".xlsx"
     with NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         content = await file.read()
+        if len(content) > _MAX_UPLOAD_BYTES:
+            return Response(
+                content='{"detail":"file too large (max 10 MB)"}',
+                status_code=413,
+                media_type="application/json",
+            )
         tmp.write(content)
         tmp_path = Path(tmp.name)
 
@@ -546,7 +555,14 @@ async def export_overrides():
 @app.post("/api/overrides/import")
 async def import_overrides(file: UploadFile = File(...)):
     """Import a CSV file and merge with existing overrides."""
-    content = (await file.read()).decode("utf-8")
+    raw = await file.read()
+    if len(raw) > _MAX_UPLOAD_BYTES:
+        return Response(
+            content='{"detail":"file too large (max 10 MB)"}',
+            status_code=413,
+            media_type="application/json",
+        )
+    content = raw.decode("utf-8")
     reader = csv.DictReader(io.StringIO(content))
     incoming = list(reader)
 
@@ -600,9 +616,21 @@ async def diff_upload(
     prev_tmp = NamedTemporaryFile(suffix=".xlsx", delete=False)
     curr_tmp = NamedTemporaryFile(suffix=".xlsx", delete=False)
     try:
-        prev_tmp.write(await previous.read())
+        prev_data = await previous.read()
+        curr_data = await current.read()
+        if len(prev_data) > _MAX_UPLOAD_BYTES or len(curr_data) > _MAX_UPLOAD_BYTES:
+            prev_tmp.close()
+            curr_tmp.close()
+            Path(prev_tmp.name).unlink(missing_ok=True)
+            Path(curr_tmp.name).unlink(missing_ok=True)
+            return Response(
+                content='{"detail":"file too large (max 10 MB)"}',
+                status_code=413,
+                media_type="application/json",
+            )
+        prev_tmp.write(prev_data)
         prev_tmp.close()
-        curr_tmp.write(await current.read())
+        curr_tmp.write(curr_data)
         curr_tmp.close()
 
         diff_result = compare_results(prev_tmp.name, curr_tmp.name)
@@ -621,6 +649,14 @@ async def diff_last(
         return Response(
             content='{"detail":"no previous results available"}',
             status_code=404,
+            media_type="application/json",
+        )
+    results_dir = _get_results_dir().resolve()
+    resolved = Path(current).resolve()
+    if not str(resolved).startswith(str(results_dir)):
+        return Response(
+            content='{"detail":"invalid path"}',
+            status_code=400,
             media_type="application/json",
         )
     diff_result = compare_results(str(_LAST_RESULTS_PATH), current)

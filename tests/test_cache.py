@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from eol_tool.cache import ResultCache
-from eol_tool.models import EOLResult, EOLStatus, HardwareModel
+from eol_tool.models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategory
 
 
 @pytest.fixture
@@ -112,3 +112,116 @@ class TestCacheStats:
         assert s["by_status"]["active"] == 1
         assert s["by_manufacturer"]["X"] == 2
         assert s["by_manufacturer"]["Y"] == 1
+
+
+class TestCacheNewFields:
+    async def test_persists_eol_reason_risk_date_source(self, cache):
+        r = EOLResult(
+            model=HardwareModel(model="TEST-1", manufacturer="Acme", category="switch"),
+            status=EOLStatus.EOL,
+            eol_date=date(2024, 1, 1),
+            checked_at=datetime.now(),
+            confidence=95,
+            source_name="test",
+            source_url="https://example.com",
+            notes="",
+            eol_reason=EOLReason.MANUFACTURER_DECLARED,
+            risk_category=RiskCategory.SECURITY,
+            date_source="vendor_page",
+        )
+        await cache.set(r)
+        cached = await cache.get("TEST-1", "Acme")
+        assert cached is not None
+        assert cached.eol_reason == EOLReason.MANUFACTURER_DECLARED
+        assert cached.risk_category == RiskCategory.SECURITY
+        assert cached.date_source == "vendor_page"
+
+    async def test_defaults_for_missing_fields(self, cache):
+        r = EOLResult(
+            model=HardwareModel(model="TEST-2", manufacturer="Acme", category="switch"),
+            status=EOLStatus.ACTIVE,
+            checked_at=datetime.now(),
+            confidence=50,
+            source_name="test",
+        )
+        await cache.set(r)
+        cached = await cache.get("TEST-2", "Acme")
+        assert cached is not None
+        assert cached.eol_reason == EOLReason.NONE
+        assert cached.risk_category == RiskCategory.NONE
+        assert cached.date_source == "none"
+
+    async def test_migration_adds_columns_to_old_schema(self, tmp_path):
+        """Simulate an old database without the new columns."""
+        import aiosqlite
+
+        db_path = tmp_path / "old.db"
+        async with aiosqlite.connect(str(db_path)) as db:
+            await db.execute("""
+                CREATE TABLE results (
+                    model TEXT NOT NULL,
+                    manufacturer TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    eol_date TEXT,
+                    eos_date TEXT,
+                    source_url TEXT,
+                    source_name TEXT,
+                    checked_at TEXT NOT NULL,
+                    confidence INTEGER DEFAULT 0,
+                    notes TEXT,
+                    PRIMARY KEY (model, manufacturer)
+                )
+            """)
+            await db.execute("""
+                CREATE TABLE source_cache (
+                    source TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    data TEXT NOT NULL,
+                    fetched_at TEXT NOT NULL,
+                    item_count INTEGER DEFAULT 0,
+                    PRIMARY KEY (source, key)
+                )
+            """)
+            await db.commit()
+
+        cache = ResultCache(db_path=db_path)
+        try:
+            r = EOLResult(
+                model=HardwareModel(model="OLD-1", manufacturer="Acme", category="switch"),
+                status=EOLStatus.EOL,
+                checked_at=datetime.now(),
+                confidence=80,
+                source_name="test",
+                eol_reason=EOLReason.COMMUNITY_DATA,
+                risk_category=RiskCategory.SUPPORT,
+                date_source="api",
+            )
+            await cache.set(r)
+            cached = await cache.get("OLD-1", "Acme")
+            assert cached is not None
+            assert cached.eol_reason == EOLReason.COMMUNITY_DATA
+            assert cached.risk_category == RiskCategory.SUPPORT
+            assert cached.date_source == "api"
+        finally:
+            await cache.close()
+
+    async def test_migration_on_new_db_no_error(self, tmp_path):
+        """Opening a fresh database twice should not fail (columns already exist)."""
+        db_path = tmp_path / "new.db"
+        cache1 = ResultCache(db_path=db_path)
+        await cache1.set(
+            EOLResult(
+                model=HardwareModel(model="X", manufacturer="Y", category="z"),
+                status=EOLStatus.ACTIVE,
+                checked_at=datetime.now(),
+                source_name="test",
+            )
+        )
+        await cache1.close()
+
+        cache2 = ResultCache(db_path=db_path)
+        try:
+            cached = await cache2.get("X", "Y")
+            assert cached is not None
+        finally:
+            await cache2.close()

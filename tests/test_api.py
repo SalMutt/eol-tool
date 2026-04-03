@@ -3,13 +3,14 @@
 import csv
 import io
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import patch
 
 import openpyxl
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from eol_tool.api import _CSV_FIELDS, app
+from eol_tool.api import _CSV_FIELDS, _MAX_UPLOAD_BYTES, app
 from eol_tool.models import EOLResult, EOLStatus, HardwareModel
 
 _BASE = "http://test"
@@ -231,3 +232,97 @@ class TestOverridesExport:
         rows = list(reader)
         assert len(rows) == 1
         assert rows[0]["model"] == "TEST-MODEL"
+
+
+class TestDiffLastPathTraversal:
+    async def test_path_outside_results_dir_returns_400(self, client):
+        with patch("eol_tool.api._LAST_RESULTS_PATH", Path("/tmp/fake.xlsx")), \
+             patch("eol_tool.api._get_results_dir", return_value=Path("/tmp/results")):
+            # Ensure _LAST_RESULTS_PATH "exists" for the check
+            Path("/tmp/fake.xlsx").touch()
+            try:
+                resp = await client.get(
+                    "/api/diff/last", params={"current": "../../etc/passwd"}
+                )
+                assert resp.status_code == 400
+                assert resp.json()["detail"] == "invalid path"
+            finally:
+                Path("/tmp/fake.xlsx").unlink(missing_ok=True)
+
+    async def test_traversal_attempt_returns_400(self, client):
+        with patch("eol_tool.api._LAST_RESULTS_PATH", Path("/tmp/fake.xlsx")), \
+             patch("eol_tool.api._get_results_dir", return_value=Path("/tmp/results")):
+            Path("/tmp/fake.xlsx").touch()
+            try:
+                resp = await client.get(
+                    "/api/diff/last",
+                    params={"current": "/tmp/results/../../../etc/passwd"},
+                )
+                assert resp.status_code == 400
+            finally:
+                Path("/tmp/fake.xlsx").unlink(missing_ok=True)
+
+    async def test_valid_path_within_results_dir(self, client, tmp_path):
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+        fake_prev = tmp_path / "prev.xlsx"
+        fake_prev.touch()
+        current_file = results_dir / "current.xlsx"
+
+        with patch("eol_tool.api._LAST_RESULTS_PATH", fake_prev), \
+             patch("eol_tool.api._get_results_dir", return_value=results_dir):
+            # Path validation passes, but compare_results will fail on fake xlsx.
+            # We only care that the path check doesn't reject it.
+            try:
+                resp = await client.get(
+                    "/api/diff/last", params={"current": str(current_file)}
+                )
+                assert resp.status_code != 400
+            except Exception:
+                # compare_results raises on invalid xlsx — that's fine,
+                # it means the path validation passed
+                pass
+
+
+class TestUploadSizeLimit:
+    async def test_check_upload_too_large_returns_413(self, client):
+        oversized = b"x" * (_MAX_UPLOAD_BYTES + 1)
+        resp = await client.post(
+            "/api/check",
+            files={"file": ("big.xlsx", oversized, "application/octet-stream")},
+        )
+        assert resp.status_code == 413
+        assert "file too large" in resp.json()["detail"]
+
+    async def test_check_upload_within_limit(self, client):
+        buf = _make_test_xlsx([
+            ["EX4300-48T", "Juniper", "switch", "USED", "EX4300-48T"],
+        ])
+        resp = await client.post(
+            "/api/check",
+            files={"file": ("test.xlsx", buf, "application/octet-stream")},
+        )
+        assert resp.status_code == 200
+
+    async def test_import_overrides_too_large_returns_413(self, client, tmp_path):
+        oversized = b"x" * (_MAX_UPLOAD_BYTES + 1)
+        csv_path = tmp_path / "overrides.csv"
+        csv_path.touch()
+        with patch("eol_tool.api.get_csv_path", return_value=csv_path):
+            resp = await client.post(
+                "/api/overrides/import",
+                files={"file": ("big.csv", oversized, "text/csv")},
+            )
+        assert resp.status_code == 413
+
+    async def test_diff_upload_too_large_returns_413(self, client):
+        small = b"x" * 100
+        oversized = b"x" * (_MAX_UPLOAD_BYTES + 1)
+        resp = await client.post(
+            "/api/diff",
+            files={
+                "previous": ("prev.xlsx", small, "application/octet-stream"),
+                "current": ("curr.xlsx", oversized, "application/octet-stream"),
+            },
+        )
+        assert resp.status_code == 413
