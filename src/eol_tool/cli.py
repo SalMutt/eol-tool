@@ -14,7 +14,7 @@ from .diff import compare_results, format_diff_json, format_diff_text, has_criti
 from .input_filter import filter_models
 from .manufacturer_corrections import apply_manufacturer_corrections
 from .models import EOLResult, EOLStatus, HardwareModel, RiskCategory
-from .reader import read_models, write_results
+from .reader import read_models, split_results_for_retry, write_results
 from .registry import list_checkers as _list_checkers
 
 # Checkers that have a refresh_cache classmethod, keyed by source name
@@ -92,7 +92,7 @@ async def _run_with_progress(
 
 @cli.command()
 @click.option(
-    "--input", "input_path", required=True, type=click.Path(exists=True),
+    "--input", "input_path", type=click.Path(exists=True), default=None,
     help="Path to input spreadsheet",
 )
 @click.option("--output", "output_path", type=click.Path(), default=None, help="Output file path")
@@ -104,11 +104,21 @@ async def _run_with_progress(
 @click.option("--show-filtered", is_flag=True, help="List rows removed by the input filter")
 @click.option("--diff", "diff_path", type=click.Path(exists=True), default=None,
                help="Previous results xlsx to diff against after checking")
+@click.option("--retry-unknowns", "retry_path", type=click.Path(exists=True), default=None,
+              help="Re-check only UNKNOWN and NOT_FOUND models from a previous results file")
 def check(
     input_path, output_path, manufacturer, concurrency, dry_run, no_cache, skip_fallback,
-    show_filtered, diff_path,
+    show_filtered, diff_path, retry_path,
 ):
     """Check EOL status for hardware models."""
+    if retry_path:
+        _check_retry(retry_path, output_path, manufacturer, concurrency, no_cache,
+                     skip_fallback, diff_path)
+        return
+
+    if not input_path:
+        raise click.UsageError("--input is required (unless using --retry-unknowns)")
+
     models = read_models(Path(input_path))
     click.echo(f"Loaded {len(models)} models")
 
@@ -160,7 +170,78 @@ def check(
         write_results(results, Path(output_path), filtered_rows=filtered_rows)
         click.echo(f"\nResults written to {output_path}")
 
-    # Print summary table
+    _print_summary_table(results)
+
+    # Diff against previous results if requested
+    if diff_path and output_path:
+        click.echo("")
+        diff_result = compare_results(diff_path, output_path)
+        click.echo(format_diff_text(diff_result))
+        if has_critical_changes(diff_result):
+            raise SystemExit(1)
+
+
+def _check_retry(retry_path, output_path, manufacturer, concurrency, no_cache, skip_fallback,
+                 diff_path):
+    """Handle --retry-unknowns: re-check only UNKNOWN/NOT_FOUND models from previous results."""
+    mfr_filter = manufacturer if manufacturer != "all" else None
+    already_classified, retry_models = split_results_for_retry(
+        Path(retry_path), manufacturer=mfr_filter,
+    )
+    click.echo(
+        f"Retrying {len(retry_models)} unknown/not-found models from previous run"
+        f" (skipping {len(already_classified)} already classified)"
+    )
+
+    if not retry_models:
+        click.echo("Nothing to retry — all models are already classified.")
+        if output_path:
+            write_results(already_classified, Path(output_path))
+            click.echo(f"\nResults written to {output_path}")
+        return
+
+    checkers = _list_checkers()
+    if not checkers:
+        click.echo("\nNo checkers registered. Add checker modules to eol_tool/checkers/.")
+        return
+
+    click.echo("")
+    new_results = asyncio.run(
+        _run_with_progress(retry_models, concurrency, no_cache, skip_fallback)
+    )
+
+    # Merge: already classified + new results for retried models
+    merged = list(already_classified) + list(new_results)
+
+    # Count how many unknowns got resolved
+    still_unknown = sum(
+        1 for r in new_results
+        if r.status in (EOLStatus.UNKNOWN, EOLStatus.NOT_FOUND)
+    )
+    resolved = len(retry_models) - still_unknown
+    click.echo(
+        f"\nResolved {resolved} of {len(retry_models)} unknowns"
+        f" ({still_unknown} remain)"
+    )
+
+    if output_path:
+        write_results(merged, Path(output_path))
+        click.echo(f"Results written to {output_path}")
+
+    _print_summary_table(merged)
+
+    # Diff against the retry-unknowns file if --diff is also provided
+    effective_diff_path = diff_path or retry_path
+    if output_path:
+        click.echo("")
+        diff_result = compare_results(str(effective_diff_path), output_path)
+        click.echo(format_diff_text(diff_result))
+        if has_critical_changes(diff_result):
+            raise SystemExit(1)
+
+
+def _print_summary_table(results: list[EOLResult]) -> None:
+    """Print the manufacturer/status/risk summary table."""
     risk_labels = ["Security", "Support", "Procurement", "Info"]
     hdr = (
         f"{'Manufacturer':<20} {'Total':>6} {'EOL':>6} "
@@ -199,14 +280,6 @@ def check(
         for rk in ["security", "support", "procurement", "informational"]:
             line += f" {c[rk]:>12}"
         click.echo(line)
-
-    # Diff against previous results if requested
-    if diff_path and output_path:
-        click.echo("")
-        diff_result = compare_results(diff_path, output_path)
-        click.echo(format_diff_text(diff_result))
-        if has_critical_changes(diff_result):
-            raise SystemExit(1)
 
 
 @cli.command("list-checkers")

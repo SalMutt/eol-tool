@@ -197,6 +197,39 @@ def read_results(path: Path) -> list[EOLResult]:
     return results
 
 
+def split_results_for_retry(
+    path: Path,
+    manufacturer: str | None = None,
+) -> tuple[list[EOLResult], list[HardwareModel]]:
+    """Read a results xlsx and split into keep/retry groups.
+
+    Returns:
+        (already_classified, retry_models) where:
+        - already_classified: EOLResult objects with status EOL, EOL_ANNOUNCED, or ACTIVE
+        - retry_models: HardwareModel objects for UNKNOWN/NOT_FOUND rows to re-check
+
+    If manufacturer is given, only UNKNOWN/NOT_FOUND rows matching that
+    manufacturer are returned for retry; the rest stay in already_classified.
+    """
+    all_results = read_results(path)
+
+    _CLASSIFIED = {EOLStatus.EOL, EOLStatus.EOL_ANNOUNCED, EOLStatus.ACTIVE}
+
+    already_classified: list[EOLResult] = []
+    retry_models: list[HardwareModel] = []
+
+    for r in all_results:
+        if r.status in _CLASSIFIED:
+            already_classified.append(r)
+        elif manufacturer and r.model.manufacturer.lower() != manufacturer.lower():
+            # Unknown/not_found but wrong manufacturer — keep as-is
+            already_classified.append(r)
+        else:
+            retry_models.append(r.model)
+
+    return already_classified, retry_models
+
+
 def read_models(path: Path) -> list[HardwareModel]:
     """Read hardware models from an Excel spreadsheet.
 
