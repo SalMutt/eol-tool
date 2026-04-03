@@ -1,187 +1,368 @@
 # eol-tool
 
-**Hardware End-of-Life Checker** — Real manufacturer EOL dates for datacenter hardware.
+Hardware end-of-life checker for datacenter inventory.
 
-eol-tool checks your hardware inventory against live manufacturer data sources and returns real end-of-life dates, end-of-support dates, and risk classifications. No hardcoded dates, no guesswork — every date is sourced from the manufacturer or a verified community database.
+[![CI](https://github.com/SalMutt/eol-tool/actions/workflows/ci.yml/badge.svg)](https://github.com/SalMutt/eol-tool/actions/workflows/ci.yml)
+[![Docker Hub](https://img.shields.io/docker/v/salmutt/eol-tool?label=Docker%20Hub)](https://hub.docker.com/r/salmutt/eol-tool)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
+
+## What It Does
+
+Checks datacenter hardware against manufacturer EOL databases. Queries Intel ARK, Juniper EOL pages, Cisco bulletins, endoflife.date API, and local rules engines. Supports 1000+ models across 40+ manufacturers with 97% classification rate.
 
 ## Quick Start
 
-**Docker (recommended):**
+**Single model lookup:**
 
 ```bash
-docker run -d -p 8080:8080 --name eol-tool salmutt/eol-tool:latest
+curl "http://localhost:8080/api/lookup?model=EX4300-48T&manufacturer=Juniper"
 ```
 
-Open http://localhost:8080
+**Bulk check from spreadsheet:**
+
+```bash
+eol-tool check --input inventory.xlsx --output results.xlsx
+```
+
+**Docker:**
+
+```bash
+docker run -v ./data:/app/data salmutt/eol-tool:latest \
+  eol-tool check --input /app/data/inventory.xlsx --output /app/data/results.xlsx
+```
+
+**Web dashboard:**
+
+```bash
+docker compose up -d
+# Open http://localhost:8080
+```
+
+## Features
+
+- **Bulk classification** from xlsx/csv input
+- **Single model lookup** via API
+- **Web dashboard** with search, filters, export
+- **Diff reporting** — compare runs, surface changes
+- **Scheduled checks** with ntfy notifications
+- **Manual overrides** via web UI or CSV
+- **Scraper health monitoring** dashboard
+- **Input filtering** for junk/non-hardware rows
+- **Rate limit resilience** with exponential backoff
+- **Docker deployment** with persistent data
+
+## Installation
 
 **From source:**
 
 ```bash
 git clone https://github.com/SalMutt/eol-tool.git
 cd eol-tool
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev,api]"
+playwright install chromium   # required for Intel ARK and Cisco scrapers
+```
+
+**Docker:**
+
+```bash
+docker pull salmutt/eol-tool:latest
+```
+
+Or with the full stack (web + scheduler):
+
+```bash
 docker compose up -d
 ```
 
-**Local development:**
+## CLI Reference
 
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[api]"
-playwright install chromium
+### `eol-tool check` — bulk classification
+
+```
+eol-tool check --input inventory.xlsx --output results.xlsx [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--input` | Path to input xlsx/csv spreadsheet |
+| `--output` | Output file path |
+| `--manufacturer` | Filter to a specific manufacturer (default: `all`) |
+| `--concurrency` | Max concurrent requests (default: `5`) |
+| `--no-cache` | Skip the result cache |
+| `--show-filtered` | Display rows removed by the input filter |
+| `--diff` | Previous results xlsx to diff against after checking |
+| `--retry-unknowns` | Re-check only UNKNOWN/NOT_FOUND models from a previous results file |
+| `--dry-run` | Load models and show summary without checking |
+| `--skip-fallback` | Skip the endoflife.date fallback checker |
+
+### `eol-tool diff` — compare two result files
+
+```
+eol-tool diff --previous old-results.xlsx --current new-results.xlsx [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--previous` | Path to previous results xlsx |
+| `--current` | Path to current results xlsx |
+| `--format` | Output format: `text` or `json` (default: `text`) |
+| `--verbose` | Show full details in text format |
+| `--output` | Write diff to a file instead of stdout |
+
+Exits with code 1 if critical changes are detected.
+
+### `eol-tool schedule` — scheduled checks with notifications
+
+```
+eol-tool schedule --input inventory.xlsx --topic my-eol-checks [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--input` | Input xlsx file |
+| `--topic` | ntfy topic name (required) |
+| `--interval` | Check interval in hours (default: `24`) |
+| `--ntfy-url` | ntfy server URL (default: `https://ntfy.sh`) |
+| `--ntfy-token` | ntfy auth token (also reads `EOL_TOOL_NTFY_TOKEN`) |
+| `--notify-on` | When to notify: `critical`, `warning`, `all`, `none` (default: `warning`) |
+| `--results-dir` | Directory for timestamped results |
+| `--keep-results` | Number of result files to keep (default: `10`) |
+| `--run-once` | Run a single check and exit |
+| `--dry-run` | Run check but don't send notifications |
+
+### `eol-tool notify` — send test notification
+
+```
+eol-tool notify --topic my-topic --message "Test notification"
+```
+
+| Option | Description |
+|--------|-------------|
+| `--topic` | ntfy topic name |
+| `--message` | Message to send |
+| `--ntfy-url` | ntfy server URL (default: `https://ntfy.sh`) |
+| `--ntfy-token` | ntfy auth token |
+| `--priority` | Notification priority 1-5 (default: `3`) |
+
+### `eol-tool serve` — start the web server
+
+```
 eol-tool serve --port 8080
 ```
 
-## How It Works
+| Option | Description |
+|--------|-------------|
+| `--host` | Bind address (default: `0.0.0.0`) |
+| `--port` | Port to listen on (default: `8080`) |
 
-eol-tool queries manufacturer websites and APIs for real lifecycle data:
+### `eol-tool cache stats` / `eol-tool cache clear`
 
-| Source | Method | What It Returns |
-|--------|--------|----------------|
-| **Intel ARK** | Playwright scraper | Marketing Status, Launch Date, End of Servicing Date |
-| **Juniper EOL** | HTTP scraper | End of Life date, End of Support date per product family |
-| **Cisco bulletins** | Playwright scraper | End of Sale, End of SW Maintenance, Last Date of Support |
-| **endoflife.date** | REST API | Community-maintained lifecycle data for common products |
-
-For vendors without public EOL programs (Samsung, Seagate, WD, Kingston, Micron, SK Hynix, Toshiba, Dell, Supermicro), eol-tool classifies hardware by technology generation and product line. These vendors show "Not Available" for dates because no manufacturer date exists — the tool is honest about this rather than guessing.
-
-### Priority Chain
-
-When multiple data sources have information about a model, eol-tool picks the best result:
-
-1. **Manual overrides** — local CSV for site-specific corrections
-2. **Playwright scrapers** — real dates from Intel ARK, Cisco bulletins
-3. **HTTP scrapers** — real dates from Juniper EOL pages
-4. **endoflife.date API** — community-maintained dates
-5. **Vendor pattern rules** — classification without dates
-6. **Tech generation rules** — DDR3/4/5, CPU generation, SSD generation
-
-Dated results always beat dateless results, regardless of priority level.
-
-## Web Dashboard
-
-The web UI at http://localhost:8080 provides three workflows:
-
-**Single Model Lookup** — Type a model number and optional manufacturer to get instant results. No file upload required.
-
-**Bulk Upload** — Drag and drop an xlsx spreadsheet with your hardware inventory. If the spreadsheet contains raw inventory (Model, Manufacturer, Category columns), eol-tool processes it through all checkers and returns results. If it contains pre-processed results (with EOL Status already filled), it displays them directly.
-
-**Template Download** — Download a blank xlsx template with the correct column headers and example rows.
-
-### Dashboard Features
-
-- Collapsible manufacturer groups with model counts
-- Filter by EOL status, risk category, or manufacturer
-- Search across all models
-- Sort by name, count, EOL date, or risk level
-- Export filtered or full results as xlsx or csv
-- Date Source badges showing where each date came from
-
-## REST API
-
-```
-GET  /api/health                          Health check
-GET  /api/lookup?model=X&manufacturer=Y   Single model lookup
-POST /api/check                           Bulk xlsx upload and processing
-GET  /api/sources                         List data sources and cache status
+```bash
+eol-tool cache stats              # show cache statistics
+eol-tool cache clear              # clear all cached results
+eol-tool cache clear --manufacturer Intel   # clear one manufacturer
 ```
 
-**Example:**
+### `eol-tool list-checkers`
+
+```bash
+eol-tool list-checkers            # show registered EOL checkers
+```
+
+### `eol-tool update`
+
+```bash
+eol-tool update                   # refresh all cached source data
+eol-tool update --source juniper  # refresh one source
+```
+
+### Single model lookup
+
+There is no CLI `lookup` command. Use the API endpoint instead:
 
 ```bash
 curl "http://localhost:8080/api/lookup?model=EX4300-48T&manufacturer=Juniper"
 ```
 
-```json
-{
-  "model": "EX4300-48T",
-  "manufacturer": "Juniper",
-  "status": "eol",
-  "eol_date": "2023-03-31",
-  "eos_date": "2026-03-31",
-  "date_source": "manufacturer_confirmed",
-  "risk_category": "security",
-  "confidence": 90,
-  "source": "juniper-eol"
-}
+## API Reference
+
+All endpoints are served from the `eol-tool serve` web server. Full OpenAPI docs available at `/docs` when the server is running.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/` | Web dashboard |
+| `GET` | `/api/lookup?model=X&manufacturer=Y` | Single model lookup |
+| `POST` | `/api/check` | Bulk check (multipart xlsx upload) |
+| `GET` | `/api/overrides` | List manual overrides |
+| `POST` | `/api/overrides` | Create a manual override |
+| `PUT` | `/api/overrides` | Update a manual override |
+| `DELETE` | `/api/overrides?model=X&manufacturer=Y` | Delete a manual override |
+| `GET` | `/api/overrides/export` | Export overrides as CSV |
+| `POST` | `/api/overrides/import` | Import overrides from CSV |
+| `POST` | `/api/diff` | Compare two result xlsx files |
+| `GET` | `/api/health` | Scraper health metrics |
+| `GET` | `/api/status` | System status (last check, counts, cache, scheduler) |
+| `GET` | `/api/sources` | Data sources and cache freshness |
+
+## Checker Priority Chain
+
+When multiple data sources have information about a model, eol-tool picks the best result in this order:
+
+1. **Vendor-specific scrapers** — Intel ARK, Juniper, Cisco, Supermicro, Dell
+2. **Generic optics classifier** — white-label SFP/QSFP/XFP/CFP transceivers
+3. **Technology generation rules** — DDR3/4/5, CPU generation, SSD generation (local, no HTTP)
+4. **endoflife.date API** — community-maintained database
+5. **Manual overrides** — user-defined CSV
+
+Higher-priority checkers override lower ones. First definitive result wins. Dated results always beat dateless results, regardless of priority level.
+
+## Risk Categories
+
+| Risk | Hardware Types | Meaning |
+|------|---------------|---------|
+| **Security** | Switches, firewalls, routers | No firmware/security patches — active vulnerability risk |
+| **Support** | Servers, CPUs, RAID controllers | No vendor warranty or RMA path |
+| **Procurement** | SSDs, HDDs, memory, drives | Can't buy replacements — procurement planning needed |
+| **Informational** | Optics, coolers, cables | Technically EOL but functionally fine, low operational impact |
+
+## Scheduled Checks and Notifications
+
+eol-tool can run periodic checks and send diff-based notifications via [ntfy](https://ntfy.sh).
+
+**CLI:**
+
+```bash
+eol-tool schedule --input inventory.xlsx --topic my-eol-checks
 ```
 
-## CLI
+**Docker:** The `eol-tool-scheduler` service in `docker-compose.yml` handles this automatically. Configure via environment variables.
 
-```
-eol-tool check --input inventory.xlsx --output results.xlsx    Batch check
-eol-tool serve --port 8080                                      Start web UI + API
-eol-tool update                                                 Refresh all cached data
-eol-tool update --source juniper                                Refresh one source
-eol-tool cache stats                                            Show cache info
-eol-tool cache clear                                            Clear all caches
-eol-tool --version                                              Show version
+**Environment variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `EOL_TOOL_NTFY_TOPIC` | ntfy topic name |
+| `EOL_TOOL_NTFY_URL` | ntfy server URL (default: `https://ntfy.sh`) |
+| `EOL_TOOL_NTFY_TOKEN` | ntfy auth token for private topics |
+| `EOL_TOOL_SCHEDULE_INTERVAL` | Check interval in hours (default: `24`) |
+
+**Notification severity levels:**
+
+- `critical` — only notify on status changes to EOL or risk escalations
+- `warning` — notify on critical changes plus new unknowns (default)
+- `all` — notify on any change
+- `none` — run checks silently
+
+## Docker Deployment
+
+Full deployment with web dashboard and scheduled checks:
+
+```yaml
+services:
+  eol-tool:
+    image: salmutt/eol-tool:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - eol-cache:/root/.cache/eol-tool
+    restart: unless-stopped
+    environment:
+      - EOL_TOOL_CACHE_DIR=/root/.cache/eol-tool
+      - EOL_TOOL_DATA_DIR=/app/data
+
+  eol-tool-scheduler:
+    image: salmutt/eol-tool:latest
+    volumes:
+      - ./data:/app/data
+      - ./results:/app/results
+      - eol-cache:/root/.cache/eol-tool
+    restart: unless-stopped
+    environment:
+      - EOL_TOOL_DATA_DIR=/app/data
+      - EOL_TOOL_CACHE_DIR=/root/.cache/eol-tool
+      - EOL_TOOL_RESULTS_DIR=/app/results
+      - EOL_TOOL_NTFY_TOPIC=eol-checks
+      - EOL_TOOL_SCHEDULE_INTERVAL=24
+    command: >
+      eol-tool schedule
+        --input /app/data/eol_models_cleaned.xlsx
+        --results-dir /app/results
+
+volumes:
+  eol-cache:
 ```
 
-## Spreadsheet Format
+**Volume mounts:**
+
+| Mount | Purpose |
+|-------|---------|
+| `./data:/app/data` | Input spreadsheets, manual overrides CSV |
+| `./results:/app/results` | Timestamped result files from scheduled checks |
+| `eol-cache` | Named volume for SQLite cache (shared between services) |
+
+## Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EOL_TOOL_DATA_DIR` | `./data` | Directory for input files and manual overrides |
+| `EOL_TOOL_CACHE_DIR` | `~/.cache/eol-tool` | SQLite cache directory |
+| `EOL_TOOL_RESULTS_DIR` | `./results` | Directory for scheduled check results |
+| `EOL_TOOL_NTFY_URL` | `https://ntfy.sh` | ntfy server URL |
+| `EOL_TOOL_NTFY_TOPIC` | *(none)* | ntfy topic name |
+| `EOL_TOOL_NTFY_TOKEN` | *(none)* | ntfy auth token |
+| `EOL_TOOL_SCHEDULE_INTERVAL` | `24` | Check interval in hours |
+| `EOL_TOOL_RETRY_MAX` | `3` | Max retries for HTTP requests |
+| `EOL_TOOL_RETRY_BASE_DELAY` | `2.0` | Base delay in seconds for exponential backoff |
+
+## Input Format
 
 eol-tool accepts xlsx files with these columns:
 
 | Column | Required | Example |
 |--------|----------|---------|
-| Model | Yes | EX4300-48T, EPYC 7413, PM893, R630 |
-| Manufacturer | Yes | Juniper, AMD, Samsung, Dell |
-| Category | Yes | switch, cpu, ssd, server, memory, nic, hdd |
+| Model | Yes | `EX4300-48T`, `EPYC 7413`, `PM893`, `R630` |
+| Manufacturer | Yes | `Juniper`, `AMD`, `Samsung`, `Dell` |
+| Category | Yes | `switch`, `cpu`, `ssd`, `server`, `memory`, `nic`, `hdd` |
 
-Download a pre-formatted template from the web UI.
+A pre-formatted template with example rows is available for download in the web UI.
 
-## Risk Categories
+## Adding Manual Overrides
 
-eol-tool assigns risk levels to EOL hardware based on category:
+**Via web UI:** Navigate to the Manual Overrides page from the dashboard.
 
-| Risk | Hardware Types | Meaning |
-|------|---------------|---------|
-| **Security** | Switches, firewalls, routers | No security patches — active vulnerability risk |
-| **Support** | Servers, CPUs, RAID controllers | No vendor support — failures have no repair path |
-| **Procurement** | SSDs, HDDs, memory, drives | No replacement parts — procurement planning needed |
-| **Informational** | Optics, coolers, cables | Low operational impact |
+**Via CLI:** Edit `data/manual_overrides.csv` directly. Columns: `model`, `manufacturer`, `status`, `eol_reason`, `risk_category`, `eol_date`, `eos_date`, `source_url`, `notes`.
 
-## Architecture
+**Via API:**
 
-```
-                    +------------------+
-                    |     Web UI       |
-                    |  (React + XLSX)  |
-                    +--------+---------+
-                             |
-                    +--------v---------+
-                    |    FastAPI        |
-                    |  /api/lookup      |
-                    |  /api/check       |
-                    +--------+---------+
-                             |
-                    +--------v---------+
-                    |  Check Pipeline   |
-                    |  select_best()    |
-                    +--------+---------+
-                             |
-           +-----------------+------------------+
-           |                 |                  |
-  +--------v-------+ +------v-------+ +--------v--------+
-  |   Playwright    | |    httpx     | |  Static Rules    |
-  |   Scrapers      | |   Scrapers   | |  (no dates)      |
-  |                 | |              | |                   |
-  |  Intel ARK      | |  Juniper     | |  25+ vendor       |
-  |  Cisco EOL      | |  endoflife   | |  checkers         |
-  +--------+-------+ +------+-------+ +------------------+
-           |                 |
-  +--------v-----------------v-------+
-  |         SQLite Cache              |
-  |    7-30 day TTL per source        |
-  +----------------------------------+
+```bash
+# Create an override
+curl -X POST http://localhost:8080/api/overrides \
+  -H "Content-Type: application/json" \
+  -d '{"model": "EX4300-48T", "manufacturer": "Juniper", "status": "eol"}'
+
+# Import from CSV
+curl -X POST http://localhost:8080/api/overrides/import \
+  -F "file=@manual_overrides.csv"
 ```
 
-## Supported Manufacturers
+## Development
 
-AMD, Arista, ASRock, ASUS, Broadcom, Brocade, Chenbro, Cisco, Corsair, Dell, Dynatron, EVGA, Gigabyte, HPE, Hitachi, IBM, Intel, Juniper, KIOXIA, Kingston, Mellanox, Micron, MSI, Mushkin, NVIDIA, OCZ, PNY, Samsung, SanDisk, Seagate, SK Hynix, Solidigm, Supermicro, Toshiba, Transcend, WD, Zotac
+```bash
+git clone https://github.com/SalMutt/eol-tool.git
+cd eol-tool
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev,api]"
+playwright install chromium
+```
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, adding new vendor checkers, and code style guidelines.
+```bash
+pytest -v                      # run tests
+ruff check src/ tests/         # lint
+pytest --cov=eol_tool          # coverage
+```
 
 ## License
 
