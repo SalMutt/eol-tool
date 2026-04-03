@@ -2,6 +2,7 @@
 
 import csv
 import io
+import json
 import logging
 import re
 import threading
@@ -19,6 +20,7 @@ from eol_tool import __version__
 
 from .cache import ResultCache
 from .check_pipeline import run_check_pipeline
+from .diff import compare_results
 from .input_filter import filter_models
 from .manufacturer_corrections import apply_manufacturer_corrections
 from .models import EOLResult, HardwareModel
@@ -471,6 +473,50 @@ async def import_overrides(file: UploadFile = File(...)):
         _write_overrides_csv(existing, get_csv_path())
 
     return {"added": added, "updated": updated, "unchanged": unchanged}
+
+
+_LAST_RESULTS_PATH: Path | None = None
+
+
+def _set_last_results(path: Path) -> None:
+    global _LAST_RESULTS_PATH
+    _LAST_RESULTS_PATH = path
+
+
+@app.post("/api/diff")
+async def diff_upload(
+    previous: UploadFile = File(...),
+    current: UploadFile = File(...),
+):
+    """Compare two xlsx result files and return the diff as JSON."""
+    prev_tmp = NamedTemporaryFile(suffix=".xlsx", delete=False)
+    curr_tmp = NamedTemporaryFile(suffix=".xlsx", delete=False)
+    try:
+        prev_tmp.write(await previous.read())
+        prev_tmp.close()
+        curr_tmp.write(await current.read())
+        curr_tmp.close()
+
+        diff_result = compare_results(prev_tmp.name, curr_tmp.name)
+        return json.loads(diff_result.model_dump_json())
+    finally:
+        Path(prev_tmp.name).unlink(missing_ok=True)
+        Path(curr_tmp.name).unlink(missing_ok=True)
+
+
+@app.get("/api/diff/last")
+async def diff_last(
+    current: str = Query(..., description="Path to current results xlsx"),
+):
+    """Compare against the most recent stored results."""
+    if _LAST_RESULTS_PATH is None or not _LAST_RESULTS_PATH.exists():
+        return Response(
+            content='{"detail":"no previous results available"}',
+            status_code=404,
+            media_type="application/json",
+        )
+    diff_result = compare_results(str(_LAST_RESULTS_PATH), current)
+    return json.loads(diff_result.model_dump_json())
 
 
 # Mount static files last so API routes take precedence

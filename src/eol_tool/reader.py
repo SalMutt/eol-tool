@@ -1,14 +1,14 @@
 """Read hardware models from spreadsheets and write results."""
 
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from .models import EOLResult, HardwareModel
+from .models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategory
 from .normalizer import normalize_model
 
 logger = logging.getLogger(__name__)
@@ -74,6 +74,127 @@ _DATE_SOURCE_LABELS = {
     "community_database": "Community Database",
     "none": "Not Available",
 }
+
+
+def read_results(path: Path) -> list[EOLResult]:
+    """Read EOL results back from a results xlsx file.
+
+    Expects a sheet named 'EOL Results' with the standard result columns.
+    """
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    ws = wb["EOL Results"] if "EOL Results" in wb.sheetnames else wb.worksheets[0]
+
+    rows = ws.iter_rows(values_only=True)
+    raw_headers = next(rows)
+    headers = [str(h).strip().lower().replace(" ", "_") for h in raw_headers if h is not None]
+
+    results: list[EOLResult] = []
+    for row in rows:
+        values = dict(zip(headers, row))
+        model_str = str(values.get("model") or "").strip()
+        if not model_str:
+            continue
+
+        manufacturer = str(values.get("manufacturer") or "").strip()
+        category = str(values.get("category") or "").strip() or "unknown"
+        condition = str(values.get("condition") or "").strip()
+        original_item = str(values.get("original_item") or "").strip()
+
+        status_str = str(values.get("eol_status") or "unknown").strip().lower()
+        try:
+            status = EOLStatus(status_str)
+        except ValueError:
+            status = EOLStatus.UNKNOWN
+
+        eol_date = None
+        eol_date_raw = values.get("eol_date")
+        if eol_date_raw:
+            eol_date_str = str(eol_date_raw).strip()
+            if eol_date_str:
+                try:
+                    if isinstance(eol_date_raw, date):
+                        eol_date = eol_date_raw if isinstance(eol_date_raw, date) else None
+                    else:
+                        eol_date = date.fromisoformat(eol_date_str)
+                except (ValueError, TypeError):
+                    pass
+
+        eos_date = None
+        eos_date_raw = values.get("eos_date")
+        if eos_date_raw:
+            eos_date_str = str(eos_date_raw).strip()
+            if eos_date_str:
+                try:
+                    if isinstance(eos_date_raw, date):
+                        eos_date = eos_date_raw
+                    else:
+                        eos_date = date.fromisoformat(eos_date_str)
+                except (ValueError, TypeError):
+                    pass
+
+        risk_str = str(values.get("risk_category") or "none").strip().lower()
+        try:
+            risk = RiskCategory(risk_str)
+        except ValueError:
+            risk = RiskCategory.NONE
+
+        reason_str = str(values.get("eol_reason") or "none").strip().lower()
+        try:
+            reason = EOLReason(reason_str)
+        except ValueError:
+            reason = EOLReason.NONE
+
+        confidence_raw = values.get("confidence")
+        try:
+            confidence = int(confidence_raw) if confidence_raw else 0
+        except (ValueError, TypeError):
+            confidence = 0
+
+        checked_at_raw = values.get("checked_at")
+        if isinstance(checked_at_raw, datetime):
+            checked_at = checked_at_raw
+        elif checked_at_raw:
+            try:
+                checked_at = datetime.fromisoformat(str(checked_at_raw).strip())
+            except ValueError:
+                checked_at = datetime.now()
+        else:
+            checked_at = datetime.now()
+
+        source_name = str(values.get("source") or "").strip()
+        date_source_raw = str(values.get("date_source") or "none").strip()
+        # Reverse map display labels back to internal values
+        _reverse_date_source = {v.lower(): k for k, v in _DATE_SOURCE_LABELS.items()}
+        date_source = _reverse_date_source.get(date_source_raw.lower(), date_source_raw.lower())
+
+        notes = str(values.get("notes") or "").strip()
+
+        hw = HardwareModel(
+            model=model_str,
+            manufacturer=manufacturer,
+            category=category,
+            condition=condition,
+            original_item=original_item,
+        )
+
+        results.append(
+            EOLResult(
+                model=hw,
+                status=status,
+                eol_date=eol_date,
+                eos_date=eos_date,
+                source_name=source_name,
+                checked_at=checked_at,
+                confidence=confidence,
+                notes=notes,
+                eol_reason=reason,
+                risk_category=risk,
+                date_source=date_source,
+            )
+        )
+
+    wb.close()
+    return results
 
 
 def read_models(path: Path) -> list[HardwareModel]:

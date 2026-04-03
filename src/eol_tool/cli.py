@@ -9,6 +9,7 @@ import click
 
 from eol_tool import __version__
 
+from .diff import compare_results, format_diff_json, format_diff_text, has_critical_changes
 from .input_filter import filter_models
 from .manufacturer_corrections import apply_manufacturer_corrections
 from .models import EOLResult, EOLStatus, HardwareModel, RiskCategory
@@ -100,9 +101,11 @@ async def _run_with_progress(
 @click.option("--no-cache", is_flag=True, help="Skip the result cache")
 @click.option("--skip-fallback", is_flag=True, help="Skip the endoflife.date fallback checker")
 @click.option("--show-filtered", is_flag=True, help="List rows removed by the input filter")
+@click.option("--diff", "diff_path", type=click.Path(exists=True), default=None,
+               help="Previous results xlsx to diff against after checking")
 def check(
     input_path, output_path, manufacturer, concurrency, dry_run, no_cache, skip_fallback,
-    show_filtered,
+    show_filtered, diff_path,
 ):
     """Check EOL status for hardware models."""
     models = read_models(Path(input_path))
@@ -195,6 +198,14 @@ def check(
         for rk in ["security", "support", "procurement", "informational"]:
             line += f" {c[rk]:>12}"
         click.echo(line)
+
+    # Diff against previous results if requested
+    if diff_path and output_path:
+        click.echo("")
+        diff_result = compare_results(diff_path, output_path)
+        click.echo(format_diff_text(diff_result))
+        if has_critical_changes(diff_result):
+            raise SystemExit(1)
 
 
 @cli.command("list-checkers")
@@ -323,6 +334,36 @@ def update(source_name):
             await cache.close()
 
     asyncio.run(_run())
+
+
+@cli.command("diff")
+@click.option("--previous", required=True, type=click.Path(exists=True),
+              help="Path to previous results xlsx")
+@click.option("--current", required=True, type=click.Path(exists=True),
+              help="Path to current results xlsx")
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text",
+              help="Output format")
+@click.option("--verbose", is_flag=True, help="Show full details in text format")
+@click.option("--output", "output_path", type=click.Path(), default=None,
+              help="Write diff to a file instead of stdout")
+def diff_cmd(previous, current, output_format, verbose, output_path):
+    """Compare two result sets and show what changed."""
+    diff_result = compare_results(previous, current)
+
+    if output_format == "json":
+        output = format_diff_json(diff_result)
+    else:
+        output = format_diff_text(diff_result, verbose=verbose)
+
+    if output_path:
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_text(output, encoding="utf-8")
+        click.echo(f"Diff written to {output_path}")
+    else:
+        click.echo(output)
+
+    if has_critical_changes(diff_result):
+        raise SystemExit(1)
 
 
 @cli.command()
