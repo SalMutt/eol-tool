@@ -31,10 +31,16 @@ class RetryConfig:
 
     @classmethod
     def from_env(cls, **overrides) -> "RetryConfig":
-        """Create config from environment variables with optional overrides."""
-        max_retries = int(os.environ.get("EOL_TOOL_RETRY_MAX", "3"))
-        base_delay = float(os.environ.get("EOL_TOOL_RETRY_BASE_DELAY", "2.0"))
-        return cls(max_retries=max_retries, base_delay=base_delay, **overrides)
+        """Create config from environment variables with optional overrides.
+
+        Explicit keyword overrides take precedence over env vars.
+        """
+        defaults = {
+            "max_retries": int(os.environ.get("EOL_TOOL_RETRY_MAX", "3")),
+            "base_delay": float(os.environ.get("EOL_TOOL_RETRY_BASE_DELAY", "2.0")),
+        }
+        defaults.update(overrides)
+        return cls(**defaults)
 
 
 class RetryExhausted(Exception):
