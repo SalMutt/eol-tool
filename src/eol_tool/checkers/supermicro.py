@@ -1,13 +1,20 @@
 """Supermicro EOL checker using generation-based classification rules.
 
-Uses board-generation prefix rules (X9=EOL, X10=EOL, X12=active, etc.)
-to classify Supermicro hardware. The Supermicro EOL product page is no
-longer available, so all classification is rule-based.
+Supermicro does not publish specific EOL dates on their website.
+The archive page (supermicro.com/products/motherboard/archive/) only
+indicates discontinued status, not a date. Individual product pages
+(e.g. X10DRI) show "Discontinued SKU (EOL)" but no date.
+Dates can only come from Supermicro's direct customer communications
+or third-party databases (e.g. last-time-buy notices sent to partners).
+
+This checker returns EOL status based on board generation
+(X9/X10/X11/X12/X13/X14/H11/H12/H13/H14) but eol_date will be None
+for all Supermicro products.
 """
 
 import logging
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 from ..checker import BaseChecker
 from ..models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategory
@@ -216,7 +223,7 @@ class SupermicroChecker(BaseChecker):
     def __init__(self) -> None:
         super().__init__()
         logger.info(
-            "Supermicro EOL page no longer available, using generation rules only"
+            "Supermicro does not publish EOL dates; using generation rules only"
         )
 
     async def check(self, model: HardwareModel) -> EOLResult:
@@ -255,6 +262,7 @@ class SupermicroChecker(BaseChecker):
                 EOLReason.TECHNOLOGY_GENERATION,
                 risk,
                 gen["notes"],
+                eol_date=gen.get("eol_date"),
             )
 
         # Systems: extract generation from SYS-*/AS-* model number
@@ -267,6 +275,7 @@ class SupermicroChecker(BaseChecker):
                 EOLReason.TECHNOLOGY_GENERATION,
                 RiskCategory.SUPPORT,
                 gen["notes"],
+                eol_date=gen.get("eol_date"),
             )
 
         # Heatsinks: map SNK-P00xx to board generation
@@ -279,6 +288,7 @@ class SupermicroChecker(BaseChecker):
                 EOLReason.TECHNOLOGY_GENERATION,
                 RiskCategory.PROCUREMENT,
                 gen["notes"],
+                eol_date=gen.get("eol_date"),
             )
 
         # Chassis -- check static classification, then fall back to UNKNOWN
@@ -416,6 +426,7 @@ class SupermicroChecker(BaseChecker):
         eol_reason: EOLReason,
         risk_category: RiskCategory,
         notes: str,
+        eol_date: date | None = None,
     ) -> EOLResult:
         return EOLResult(
             model=model,
@@ -426,5 +437,6 @@ class SupermicroChecker(BaseChecker):
             notes=notes,
             eol_reason=eol_reason,
             risk_category=risk_category,
+            eol_date=eol_date,
             date_source="none",
         )

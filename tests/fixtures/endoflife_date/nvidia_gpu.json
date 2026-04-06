@@ -1,0 +1,50 @@
+[
+  {
+    "cycle": "hopper",
+    "releaseLabel": "Hopper (H100/H200)",
+    "releaseDate": "2022-09-20",
+    "discontinued": false,
+    "eol": false,
+    "lts": false
+  },
+  {
+    "cycle": "ampere",
+    "releaseLabel": "Ampere (A100/A30/RTX A-series)",
+    "releaseDate": "2020-05-14",
+    "discontinued": false,
+    "eol": false,
+    "lts": false
+  },
+  {
+    "cycle": "turing",
+    "releaseLabel": "Turing (T4/RTX/Quadro RTX)",
+    "releaseDate": "2018-09-20",
+    "discontinued": "2023-06-30",
+    "eol": "2025-12-31",
+    "lts": false
+  },
+  {
+    "cycle": "pascal",
+    "releaseLabel": "Pascal (P100/P40/Quadro P/GP-series)",
+    "releaseDate": "2016-04-05",
+    "discontinued": "2021-03-31",
+    "eol": "2024-06-30",
+    "lts": false
+  },
+  {
+    "cycle": "maxwell",
+    "releaseLabel": "Maxwell (M40/Quadro M/K-series)",
+    "releaseDate": "2014-09-19",
+    "discontinued": "2019-06-30",
+    "eol": "2023-03-31",
+    "lts": false
+  },
+  {
+    "cycle": "kepler",
+    "releaseLabel": "Kepler (K80/K40/K20)",
+    "releaseDate": "2012-05-10",
+    "discontinued": "2017-11-30",
+    "eol": "2022-03-31",
+    "lts": false
+  }
+]

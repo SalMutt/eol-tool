@@ -6,7 +6,7 @@ is local.
 """
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 from ..checker import BaseChecker
 from ..models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategory
@@ -62,6 +62,8 @@ class TechGenerationChecker(BaseChecker):
         risk: RiskCategory,
         notes: str,
         eol_reason: EOLReason = EOLReason.TECHNOLOGY_GENERATION,
+        eol_date: date | None = None,
+        date_source: str = "none",
     ) -> EOLResult:
         return EOLResult(
             model=model,
@@ -72,6 +74,8 @@ class TechGenerationChecker(BaseChecker):
             notes=notes,
             eol_reason=eol_reason,
             risk_category=risk,
+            eol_date=eol_date,
+            date_source=date_source,
         )
 
     # ------------------------------------------------------------------
@@ -87,6 +91,8 @@ class TechGenerationChecker(BaseChecker):
                 RiskCategory.SECURITY,
                 "Brocade acquired by Broadcom — all legacy products EOL",
                 eol_reason=EOLReason.VENDOR_ACQUIRED,
+                eol_date=date(2017, 11, 17),
+                date_source="community_database",
             )
         if mfr == "evga":
             return self._make_result(
@@ -95,6 +101,8 @@ class TechGenerationChecker(BaseChecker):
                 RiskCategory.PROCUREMENT,
                 "EVGA exited GPU business 2022",
                 eol_reason=EOLReason.VENDOR_ACQUIRED,
+                eol_date=date(2022, 9, 16),
+                date_source="community_database",
             )
         if mfr == "hitachi":
             return self._make_result(
@@ -103,6 +111,18 @@ class TechGenerationChecker(BaseChecker):
                 RiskCategory.PROCUREMENT,
                 "hitachi-gst-acquired-by-western-digital-2012",
                 eol_reason=EOLReason.VENDOR_ACQUIRED,
+                eol_date=date(2012, 3, 8),
+                date_source="community_database",
+            )
+        if mfr == "ocz":
+            return self._make_result(
+                model,
+                EOLStatus.EOL,
+                RiskCategory.PROCUREMENT,
+                "OCZ acquired by Toshiba 2014",
+                eol_reason=EOLReason.VENDOR_ACQUIRED,
+                eol_date=date(2014, 1, 21),
+                date_source="community_database",
             )
         return None
 
@@ -225,11 +245,32 @@ class TechGenerationChecker(BaseChecker):
                 "Intel Xeon E5 v1 — end of life",
             )
 
-        # Intel Xeon E-2100 series
+        # Intel Xeon E-2100 series (Coffee Lake)
         if re.search(r"E-21\d{2}G?", m):
             return self._make_result(
                 model, EOLStatus.ACTIVE, RiskCategory.INFORMATIONAL,
                 "Intel Xeon E-2100 series — active",
+            )
+
+        # Intel Xeon E-2200 series (Coffee Lake Refresh)
+        if re.search(r"E-22\d{2}G?", m):
+            return self._make_result(
+                model, EOLStatus.ACTIVE, RiskCategory.INFORMATIONAL,
+                "Intel Xeon E-2200 series — active",
+            )
+
+        # Intel Xeon E-2300 series (Rocket Lake)
+        if re.search(r"E-23\d{2}G?", m):
+            return self._make_result(
+                model, EOLStatus.ACTIVE, RiskCategory.NONE,
+                "Intel Xeon E-2300 series — active",
+            )
+
+        # Intel Xeon E-2400 series (Raptor Lake)
+        if re.search(r"E-24\d{2}G?", m):
+            return self._make_result(
+                model, EOLStatus.ACTIVE, RiskCategory.NONE,
+                "Intel Xeon E-2400 series — active",
             )
 
         # Intel Xeon Scalable (require Intel context)
@@ -240,6 +281,7 @@ class TechGenerationChecker(BaseChecker):
             or any(kw in m for kw in ["GOLD", "SILVER", "PLATINUM", "BRONZE"])
         )
         if has_intel_context:
+            # Gen 1/2: [12] for second digit avoids SSD model conflicts (S3500, P4510)
             scalable_match = re.search(r"(?<!\d)([3-8][12]\d{2})(?!\d)", m)
             if scalable_match:
                 gen = int(scalable_match.group(1)[1])
@@ -253,6 +295,26 @@ class TechGenerationChecker(BaseChecker):
                         model, EOLStatus.EOL, RiskCategory.INFORMATIONAL,
                         "Intel Xeon Scalable 2nd gen (Cascade Lake) — end of life",
                     )
+
+            # Gen 3/4: broader second-digit range needs XEON/tier keyword or cpu category
+            # to avoid false matches on SSD models like P4510, S3500
+            has_xeon_kw = "XEON" in m or any(
+                kw in m for kw in ["GOLD", "SILVER", "PLATINUM", "BRONZE"]
+            )
+            if has_xeon_kw or model.category.lower() in ("cpu", "processor"):
+                scalable_34 = re.search(r"(?<!\d)([4-8][3-5]\d{2})(?!\d)", m)
+                if scalable_34:
+                    gen = int(scalable_34.group(1)[1])
+                    if gen == 3:
+                        return self._make_result(
+                            model, EOLStatus.ACTIVE, RiskCategory.INFORMATIONAL,
+                            "Intel Xeon Scalable 3rd gen (Ice Lake) — active",
+                        )
+                    if gen in (4, 5):
+                        return self._make_result(
+                            model, EOLStatus.ACTIVE, RiskCategory.NONE,
+                            "Intel Xeon Scalable 4th gen (Sapphire Rapids) — active",
+                        )
 
         # AMD EPYC
         epyc_match = re.search(r"EPYC\s*(\d)(\d{2})(\d)", m)

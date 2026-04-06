@@ -11,6 +11,7 @@ from ..checker import BaseChecker
 from ..models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategory
 
 # ── SSD product line rules (substring match) ─────────────────────────
+# Tuples: (key, status, risk, notes, eol_date_or_None)
 _SSD_RULES: list[tuple[str, EOLStatus, RiskCategory, str]] = [
     ("PM9A3", EOLStatus.ACTIVE, RiskCategory.NONE,
      "Samsung PM9A3 - current enterprise NVMe"),
@@ -85,6 +86,7 @@ _SSD_RULES: list[tuple[str, EOLStatus, RiskCategory, str]] = [
 ]
 
 # ── DRAM prefix rules ────────────────────────────────────────────────
+# Tuples: (prefix, status, risk, notes, eol_date_or_None)
 _DRAM_RULES: list[tuple[str, EOLStatus, RiskCategory, str]] = [
     ("M321R", EOLStatus.ACTIVE, RiskCategory.NONE,
      "Samsung DDR5 RDIMM - current generation"),
@@ -160,4 +162,5 @@ class SamsungChecker(BaseChecker):
             if status == EOLStatus.EOL
             else EOLReason.NONE,
             risk_category=risk,
+            date_source="none",
         )

@@ -6,6 +6,7 @@ from datetime import datetime
 
 from .cache import ResultCache
 from .checker import BaseChecker
+from .checkers.endoflife_date import supplement_missing_dates
 from .models import EOLResult, EOLStatus, HardwareModel
 from .registry import get_checker, get_checkers
 
@@ -177,6 +178,10 @@ async def run_check_pipeline(
                     await cache_inst.set(r)
 
             all_results.extend(batch_results)
+
+        if not skip_fallback:
+            logger.info("Supplementing missing dates from endoflife.date...")
+            all_results = await supplement_missing_dates(all_results)
 
     finally:
         if own_cache and cache_inst:

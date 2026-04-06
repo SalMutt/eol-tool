@@ -23,6 +23,7 @@ _RESULT_COLUMNS = [
     "EOL Status",
     "EOL Date",
     "EOS Date",
+    "Release Date",
     "Date Source",
     "Confidence",
     "Source",
@@ -59,6 +60,7 @@ _DEFAULT_WIDTHS = {
     "EOL Status": 16,
     "EOL Date": 14,
     "EOS Date": 14,
+    "Release Date": 14,
     "Date Source": 22,
     "Confidence": 12,
     "Source": 30,
@@ -153,18 +155,19 @@ def write_results(
 
         ws.cell(row=row_idx, column=6, value=str(r.eol_date) if r.eol_date else "")
         ws.cell(row=row_idx, column=7, value=str(r.eos_date) if r.eos_date else "")
+        ws.cell(row=row_idx, column=8, value=str(r.release_date) if r.release_date else "")
         ws.cell(
-            row=row_idx, column=8,
+            row=row_idx, column=9,
             value=_DATE_SOURCE_LABELS.get(r.date_source, "Not Available"),
         )
-        ws.cell(row=row_idx, column=9, value=r.confidence)
-        ws.cell(row=row_idx, column=10, value=r.source_name)
-        ws.cell(row=row_idx, column=11, value=r.checked_at.isoformat())
-        ws.cell(row=row_idx, column=12, value=r.model.original_item)
-        ws.cell(row=row_idx, column=13, value=r.notes)
-        ws.cell(row=row_idx, column=14, value=r.eol_reason.value)
+        ws.cell(row=row_idx, column=10, value=r.confidence)
+        ws.cell(row=row_idx, column=11, value=r.source_name)
+        ws.cell(row=row_idx, column=12, value=r.checked_at.isoformat())
+        ws.cell(row=row_idx, column=13, value=r.model.original_item)
+        ws.cell(row=row_idx, column=14, value=r.notes)
+        ws.cell(row=row_idx, column=15, value=r.eol_reason.value)
 
-        risk_cell = ws.cell(row=row_idx, column=15, value=r.risk_category.value)
+        risk_cell = ws.cell(row=row_idx, column=16, value=r.risk_category.value)
         risk_style = _RISK_STYLES.get(r.risk_category.value)
         if risk_style:
             risk_cell.font = risk_style[0]

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS results (
     status TEXT NOT NULL,
     eol_date TEXT,
     eos_date TEXT,
+    release_date TEXT,
     source_url TEXT,
     source_name TEXT,
     checked_at TEXT NOT NULL,
@@ -50,8 +51,19 @@ class ResultCache:
             self._db = await aiosqlite.connect(str(self._db_path))
             await self._db.execute(_CREATE_TABLE)
             await self._db.execute(_CREATE_SOURCE_CACHE_TABLE)
+            await self._migrate(self._db)
             await self._db.commit()
         return self._db
+
+    @staticmethod
+    async def _migrate(db: aiosqlite.Connection) -> None:
+        """Add columns that may be missing from older databases."""
+        cursor = await db.execute("PRAGMA table_info(results)")
+        columns = {row[1] for row in await cursor.fetchall()}
+        if "release_date" not in columns:
+            await db.execute(
+                "ALTER TABLE results ADD COLUMN release_date TEXT"
+            )
 
     async def close(self) -> None:
         if self._db is not None:
@@ -63,14 +75,16 @@ class ResultCache:
     ) -> EOLResult | None:
         db = await self._connect()
         cursor = await db.execute(
-            "SELECT * FROM results WHERE model = ? AND manufacturer = ?",
+            "SELECT model, manufacturer, status, eol_date, eos_date, "
+            "release_date, source_url, source_name, checked_at, confidence, "
+            "notes FROM results WHERE model = ? AND manufacturer = ?",
             (model, manufacturer),
         )
         row = await cursor.fetchone()
         if row is None:
             return None
 
-        checked_at = datetime.fromisoformat(row[7])
+        checked_at = datetime.fromisoformat(row[8])
         if datetime.now() - checked_at > timedelta(days=max_age_days):
             return None
 
@@ -83,11 +97,12 @@ class ResultCache:
             status=EOLStatus(row[2]),
             eol_date=date.fromisoformat(row[3]) if row[3] else None,
             eos_date=date.fromisoformat(row[4]) if row[4] else None,
-            source_url=row[5] or "",
-            source_name=row[6] or "",
+            release_date=date.fromisoformat(row[5]) if row[5] else None,
+            source_url=row[6] or "",
+            source_name=row[7] or "",
             checked_at=checked_at,
-            confidence=row[8] or 0,
-            notes=row[9] or "",
+            confidence=row[9] or 0,
+            notes=row[10] or "",
         )
 
     async def set(self, result: EOLResult) -> None:
@@ -95,14 +110,16 @@ class ResultCache:
         await db.execute(
             """INSERT OR REPLACE INTO results
                (model, manufacturer, status, eol_date, eos_date,
-                source_url, source_name, checked_at, confidence, notes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                release_date, source_url, source_name, checked_at,
+                confidence, notes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 result.model.model,
                 result.model.manufacturer,
                 result.status.value,
                 result.eol_date.isoformat() if result.eol_date else None,
                 result.eos_date.isoformat() if result.eos_date else None,
+                result.release_date.isoformat() if result.release_date else None,
                 result.source_url,
                 result.source_name,
                 result.checked_at.isoformat(),

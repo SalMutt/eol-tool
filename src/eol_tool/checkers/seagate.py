@@ -35,7 +35,9 @@ def _extract_capacity_tb(model_str: str) -> float | None:
     return value
 
 
-def _classify_by_capacity(capacity_tb: float) -> tuple[EOLStatus, RiskCategory, str]:
+def _classify_by_capacity(
+    capacity_tb: float,
+) -> tuple[EOLStatus, RiskCategory, str]:
     """Classify a Seagate enterprise HDD by capacity."""
     if capacity_tb < 4.1:
         return (
@@ -106,6 +108,7 @@ class SeagateChecker(BaseChecker):
                 if status == EOLStatus.EOL
                 else EOLReason.NONE,
                 risk_category=risk,
+                date_source="none",
             )
 
         # Cannot determine capacity — return UNKNOWN

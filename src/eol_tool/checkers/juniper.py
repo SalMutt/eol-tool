@@ -209,20 +209,22 @@ _JUNIPER_OPTIC_PREFIXES = (
 )
 
 # Component prefixes that map to parent chassis families
-_COMPONENT_PATTERNS: list[tuple[str, str, str]] = [
-    # (regex_pattern, parent_family, description)
-    (r"^PWR-MX(\d+)", "mx", "MX power supply"),
-    (r"^MPC-?3D", "mx", "MX MPC-3D line card"),
-    (r"^MPC3E", "mx", "MX MPC3E line card"),
-    (r"^MPC4E", "mx", "MX MPC4E line card"),
-    (r"^MPC5E", "mx", "MX MPC5E line card"),
-    (r"^MIC-3D", "mx", "MX MIC-3D interface card"),
-    (r"^MIC3-3D", "mx", "MX MIC3-3D interface card"),
-    (r"^SCBE-?MX", "mx", "MX switch control board"),
-    (r"^SCBE2-?MX", "mx", "MX switch control board v2"),
-    (r"^RE-S-", "mx", "MX routing engine"),
-    (r"^FFANTRAY", "mx", "fan tray"),
-    (r"^JPSU-", "juniper_psu", "Juniper power supply"),
+_COMPONENT_PATTERNS: list[tuple[str, str, str, str | None]] = [
+    # (regex_pattern, parent_family, description, parent_chassis_key_override)
+    (r"^PWR-MX(\d+)", "mx", "MX power supply", None),
+    (r"^MPC-?3D", "mx", "MX MPC-3D line card", None),
+    (r"^MPC3E", "mx", "MX MPC3E line card", None),
+    (r"^MPC4E", "mx", "MX MPC4E line card", None),
+    (r"^MPC5E", "mx", "MX MPC5E line card", None),
+    (r"^MIC-3D", "mx", "MX MIC-3D interface card", None),
+    (r"^MIC3-3D", "mx", "MX MIC3-3D interface card", None),
+    (r"^SCBE-?MX", "mx", "MX switch control board", None),
+    (r"^SCBE2-?MX", "mx", "MX switch control board v2", None),
+    (r"^RE-S-", "mx", "MX routing engine", None),
+    (r"^FFANTRAY", "mx", "fan tray", None),
+    (r"^JPSU-350", "qfx", "QFX5100 power supply", "QFX5100"),
+    (r"^JPSU-650W", "ex", "EX4300 power supply", "EX4300"),
+    (r"^JPSU-", "juniper_psu", "Juniper power supply", None),
 ]
 
 # Support contracts and software prefixes — not hardware
@@ -258,14 +260,28 @@ def _extract_series_model(normalized: str) -> str | None:
     return None
 
 
-def _match_component(normalized: str) -> tuple[str, str] | None:
+def _match_component(normalized: str) -> tuple[str, str, str | None] | None:
     """Match a component model to its parent family.
 
-    Returns (family, description) or None.
+    Returns (family, description, parent_key_override) or None.
     """
-    for pattern, family, desc in _COMPONENT_PATTERNS:
+    for pattern, family, desc, parent_key in _COMPONENT_PATTERNS:
         if re.search(pattern, normalized):
-            return family, desc
+            return family, desc, parent_key
+    return None
+
+
+def _find_parent_chassis_key(normalized: str, family: str) -> str | None:
+    """Extract the parent chassis model key from a component model string.
+
+    For MX components like PWR-MX960-AC-S, extract "MX960".
+    Returns the key if found in _KNOWN_EOL, else None.
+    """
+    mx_match = re.search(r"MX(\d{2,4})", normalized)
+    if mx_match:
+        key = f"MX{mx_match.group(1)}"
+        if key in _KNOWN_EOL:
+            return key
     return None
 
 
@@ -460,16 +476,28 @@ class JuniperChecker(BaseChecker):
         # Static rules — specific overrides checked first
         for key, status, risk, reason, conf, notes in _STATIC_RULES:
             if key in normalized:
+                eol_date = None
+                eos_date = None
+                date_source = "none"
+                # Propagate parent chassis date for EX4200 components
+                if "EX4200" in notes:
+                    parent = _KNOWN_EOL.get("EX4200")
+                    if parent and parent.get("eol_date"):
+                        eol_date = parent["eol_date"]
+                        eos_date = parent.get("eos_date")
+                        date_source = "manufacturer_confirmed"
                 return EOLResult(
                     model=model,
                     status=status,
+                    eol_date=eol_date,
+                    eos_date=eos_date,
                     checked_at=datetime.now(),
                     source_name="juniper-eol",
                     confidence=conf,
                     notes=notes,
                     eol_reason=reason,
                     risk_category=risk,
-                    date_source="none",
+                    date_source=date_source,
                 )
 
         # Software/support contracts
@@ -562,10 +590,25 @@ class JuniperChecker(BaseChecker):
         # Component to parent chassis mapping
         comp = _match_component(normalized)
         if comp:
-            family, desc = comp
+            family, desc, parent_key_override = comp
+            # Try to propagate parent chassis date
+            eol_date = None
+            eos_date = None
+            date_source = "none"
+            parent_key = parent_key_override or _find_parent_chassis_key(
+                normalized, family,
+            )
+            if parent_key:
+                parent = _KNOWN_EOL.get(parent_key)
+                if parent and parent.get("eol_date"):
+                    eol_date = parent["eol_date"]
+                    eos_date = parent.get("eos_date")
+                    date_source = "manufacturer_confirmed"
             return EOLResult(
                 model=model,
                 status=EOLStatus.EOL,
+                eol_date=eol_date,
+                eos_date=eos_date,
                 checked_at=datetime.now(),
                 source_name="juniper-eol",
                 source_url=f"{self.base_url}{_FAMILY_URLS.get(family, '')}",
@@ -573,7 +616,7 @@ class JuniperChecker(BaseChecker):
                 notes=f"component-follows-parent-chassis: {desc}",
                 eol_reason=EOLReason.MANUFACTURER_DECLARED,
                 risk_category=RiskCategory.PROCUREMENT,
-                date_source="none",
+                date_source=date_source,
             )
 
         # Not matched at all

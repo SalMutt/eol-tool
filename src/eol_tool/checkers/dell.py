@@ -7,7 +7,7 @@ The endoflife.date API no longer carries a dell-poweredge product
 
 import logging
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 import httpx
 
@@ -24,21 +24,29 @@ _KNOWN_MODELS: dict[str, dict] = {
         "status": EOLStatus.EOL,
         "notes": "PowerEdge R730xd - launched 2015, end of support 2023",
         "risk": RiskCategory.SUPPORT,
+        "eol_date": date(2020, 8, 17),
+        "eos_date": date(2023, 8, 17),
     },
     "POWEREDGE R630": {
         "status": EOLStatus.EOL,
         "notes": "PowerEdge R630 - launched 2015, end of support 2023",
         "risk": RiskCategory.SUPPORT,
+        "eol_date": date(2020, 8, 17),
+        "eos_date": date(2023, 8, 17),
     },
     "R630": {
         "status": EOLStatus.EOL,
         "notes": "PowerEdge R630 - launched 2015, end of support 2023",
         "risk": RiskCategory.SUPPORT,
+        "eol_date": date(2020, 8, 17),
+        "eos_date": date(2023, 8, 17),
     },
     "R430": {
         "status": EOLStatus.EOL,
         "notes": "PowerEdge R430 - launched 2015, end of support 2023",
         "risk": RiskCategory.SUPPORT,
+        "eol_date": date(2020, 8, 17),
+        "eos_date": date(2023, 8, 17),
     },
     "POWEREDGE R750": {
         "status": EOLStatus.ACTIVE,
@@ -49,6 +57,8 @@ _KNOWN_MODELS: dict[str, dict] = {
         "status": EOLStatus.EOL_ANNOUNCED,
         "notes": "PowerEdge R640 - launched 2017, nearing end of support",
         "risk": RiskCategory.SUPPORT,
+        "eol_date": date(2023, 5, 31),
+        "eos_date": date(2028, 5, 31),
     },
     "R650": {
         "status": EOLStatus.ACTIVE,
@@ -77,6 +87,7 @@ _KNOWN_MODELS: dict[str, dict] = {
         "status": EOLStatus.EOL,
         "notes": "PERC H330 - 12th gen controller, end of life",
         "risk": RiskCategory.PROCUREMENT,
+        "eol_date": date(2020, 8, 17),
     },
     "H755": {
         "status": EOLStatus.ACTIVE,
@@ -92,21 +103,25 @@ _KNOWN_MODELS: dict[str, dict] = {
         "status": EOLStatus.EOL,
         "notes": "PERC H310 - 12th gen controller, end of life",
         "risk": RiskCategory.PROCUREMENT,
+        "eol_date": date(2020, 8, 17),
     },
     "H700": {
         "status": EOLStatus.EOL,
         "notes": "PERC H700 - 11th gen controller, end of life",
         "risk": RiskCategory.PROCUREMENT,
+        "eol_date": date(2018, 2, 8),
     },
     "H710": {
         "status": EOLStatus.EOL,
         "notes": "PERC H710 - 12th gen controller, end of life",
         "risk": RiskCategory.PROCUREMENT,
+        "eol_date": date(2020, 8, 17),
     },
     "H730": {
         "status": EOLStatus.EOL,
         "notes": "PERC H730 - 13th gen controller, end of life",
         "risk": RiskCategory.PROCUREMENT,
+        "eol_date": date(2020, 8, 17),
     },
     # ── Drives ───────────────────────────────────────────────────────
     "W345K": {
@@ -151,6 +166,8 @@ class DellChecker(BaseChecker):
         # Static lookup: exact match first, then prefix/substring
         entry = self._find_known_model(normalized)
         if entry:
+            eol_date = entry.get("eol_date")
+            eos_date = entry.get("eos_date")
             return self._make_result(
                 model,
                 entry["status"],
@@ -158,7 +175,9 @@ class DellChecker(BaseChecker):
                 EOLReason.MANUFACTURER_DECLARED,
                 entry["risk"],
                 entry["notes"],
-                date_source="none",
+                date_source="community_database" if eol_date else "none",
+                eol_date=eol_date,
+                eos_date=eos_date,
             )
 
         # Dell M.2 SSDs — generic, can't determine EOL from description
@@ -263,6 +282,8 @@ class DellChecker(BaseChecker):
         notes: str,
         *,
         date_source: str = "none",
+        eol_date: date | None = None,
+        eos_date: date | None = None,
     ) -> EOLResult:
         return EOLResult(
             model=model,
@@ -274,6 +295,8 @@ class DellChecker(BaseChecker):
             eol_reason=eol_reason,
             risk_category=risk_category,
             date_source=date_source,
+            eol_date=eol_date,
+            eos_date=eos_date,
         )
 
     @staticmethod

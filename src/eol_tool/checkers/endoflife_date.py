@@ -24,22 +24,33 @@ logger = logging.getLogger(__name__)
 #   dell-poweredge (removed upstream), cisco-asa (never existed),
 #   no products for: amd, supermicro, mellanox, arista, broadcom
 SLUG_MAP: dict[tuple[str, str], str | None] = {
+    # ── Verified slugs (return HTTP 200) ────────────────────────────────
     ("intel", "cpu"): "intel-processors",
-    ("intel", "nic"): None,
-    ("intel", "ssd"): None,
-    ("intel", "optic"): None,
-    ("dell", "server"): None,
-    ("dell", "raid-controller"): None,
-    ("dell", "ssd"): None,
-    ("cisco", "firewall"): None,
-    ("cisco", "switch"): None,
-    ("cisco", "router"): None,
     ("nvidia", "gpu"): "nvidia-gpu",
-    ("amd", "cpu"): None,
-    ("juniper", "switch"): None,
+    # ── No matching slug on endoflife.date ──────────────────────────────
+    ("intel", "nic"): None,  # no intel-nic product
+    ("intel", "ssd"): None,  # no intel-ssd product (Solidigm transition)
+    ("intel", "optic"): None,  # no intel optics product
+    ("dell", "server"): None,  # dell-poweredge removed upstream
+    ("dell", "raid-controller"): None,  # no dell PERC product
+    ("dell", "ssd"): None,  # no dell storage product
+    ("cisco", "firewall"): None,  # cisco-asa never existed
+    ("cisco", "switch"): None,  # no cisco-switch product
+    ("cisco", "router"): None,  # no cisco-router product
+    ("amd", "cpu"): None,  # no amd-processors or amd-epyc product
+    ("juniper", "switch"): None,  # no juniper product
     ("juniper", "firewall"): None,
     ("juniper", "router"): None,
-    ("samsung", "ssd"): None,
+    ("samsung", "ssd"): None,  # samsung-mobile is phones, not SSDs
+    ("seagate", "hdd"): None,  # no seagate or hard-drive product
+    ("wd", "hdd"): None,  # no western-digital product
+    ("micron", "ssd"): None,  # no micron or crucial product
+    ("kingston", "ssd"): None,  # no kingston product
+    ("kingston", "memory"): None,  # no kingston or ddr product
+    ("sk hynix", "memory"): None,  # no sk-hynix or ddr product
+    ("toshiba", "hdd"): None,  # no toshiba product
+    ("broadcom", "raid-controller"): None,  # no megaraid or broadcom product
+    ("supermicro", "server-board"): None,  # no supermicro product
 }
 
 
@@ -114,6 +125,68 @@ class EndOfLifeDateChecker(BaseChecker):
                     return cycle
             # E-series model with version but no cycle found — don't let
             # strategy 2 produce a false match via generic "XEON" token.
+            return None
+
+        # Strategy 1c: Xeon Scalable number-series matching.
+        # "XEON SILVER 4110" → 1st gen (41xx) → skylake-xeon
+        # "XEON GOLD 6248" → 2nd gen (62xx) → cascade-lake-xeon
+        xeon_scalable = re.search(
+            r"(?:SILVER|GOLD|PLATINUM|BRONZE)\s*(\d{4,5})", model_upper,
+        )
+        if xeon_scalable:
+            model_num = xeon_scalable.group(1)
+            prefix = model_num[:2]
+            _SCALABLE_GEN_MAP = {
+                "31": "skylake-xeon", "41": "skylake-xeon",
+                "51": "skylake-xeon", "61": "skylake-xeon",
+                "81": "skylake-xeon",
+                "32": "cascade-lake-xeon", "42": "cascade-lake-xeon",
+                "52": "cascade-lake-xeon", "62": "cascade-lake-xeon",
+                "82": "cascade-lake-xeon",
+                "43": "ice-lake-xeon", "53": "ice-lake-xeon",
+                "63": "ice-lake-xeon", "83": "ice-lake-xeon",
+                "44": "sapphire-rapids-xeon", "45": "sapphire-rapids-xeon",
+                "54": "sapphire-rapids-xeon", "64": "sapphire-rapids-xeon",
+                "84": "sapphire-rapids-xeon",
+            }
+            target_cycle = _SCALABLE_GEN_MAP.get(prefix)
+            if target_cycle:
+                for cycle in cycles:
+                    if str(cycle.get("cycle", "")).lower() == target_cycle:
+                        return cycle
+            return None
+
+        # Strategy 1d: NVIDIA VCQ part-number extraction.
+        # VCQP1000-PB → P1000 (Pascal), VCQRTX4000-PB → RTX4000 (Turing)
+        vcq_match = re.search(r"VCQ(RTX\s*A?\d+|GP\d+|[A-Z]\d+)", model_upper)
+        if vcq_match:
+            gpu_id = vcq_match.group(1)
+            # Direct label match with extracted GPU identifier
+            for cycle in cycles:
+                label = str(cycle.get("releaseLabel", "")).upper()
+                if gpu_id in label:
+                    return cycle
+            # Map GPU prefix to architecture cycle name
+            if gpu_id.startswith("RTXA") or gpu_id.startswith("RTX A"):
+                target_arch = "ampere"
+            elif gpu_id.startswith("RTX"):
+                target_arch = "turing"
+            elif gpu_id.startswith("GP") or gpu_id.startswith("P"):
+                target_arch = "pascal"
+            elif gpu_id.startswith("K"):
+                target_arch = "maxwell"
+            elif gpu_id.startswith("T"):
+                target_arch = "turing"
+            elif gpu_id.startswith("A"):
+                target_arch = "ampere"
+            elif gpu_id.startswith("M"):
+                target_arch = "maxwell"
+            else:
+                target_arch = None
+            if target_arch:
+                for cycle in cycles:
+                    if str(cycle.get("cycle", "")).lower() == target_arch:
+                        return cycle
             return None
 
         # Strategy 2: Check releaseLabel for model substrings
@@ -211,11 +284,20 @@ class EndOfLifeDateChecker(BaseChecker):
                     except ValueError:
                         pass
 
+                release_date = None
+                release_val = matched_cycle.get("releaseDate")
+                if isinstance(release_val, str):
+                    try:
+                        release_date = date.fromisoformat(release_val)
+                    except ValueError:
+                        pass
+
                 best_result = EOLResult(
                     model=model,
                     status=status,
                     eol_date=eol_date,
                     eos_date=eos_date,
+                    release_date=release_date,
                     source_url=f"https://endoflife.date/{slug}",
                     source_name="endoflife.date",
                     checked_at=datetime.now(),
@@ -343,3 +425,84 @@ class EndOfLifeDateChecker(BaseChecker):
                     )
                 )
         return results
+
+
+async def supplement_missing_dates(results: list[EOLResult]) -> list[EOLResult]:
+    """Add dates from endoflife.date to EOL/EOL_ANNOUNCED results that lack them.
+
+    Scans *results* for entries whose status is EOL or EOL_ANNOUNCED but whose
+    ``eol_date`` is ``None``.  For each, attempts to match against
+    endoflife.date cycles.  If a match with a concrete date is found the
+    result's ``eol_date`` (and optionally ``eos_date``) are filled in and
+    ``date_source`` is set to ``"community_database"``.  Status, source_name,
+    and other fields are **not** changed.
+    """
+    needs_date = [
+        r for r in results
+        if r.status in (EOLStatus.EOL, EOLStatus.EOL_ANNOUNCED)
+        and r.eol_date is None
+    ]
+    if not needs_date:
+        return results
+
+    try:
+        checker = EndOfLifeDateChecker()
+        async with checker:
+            products = await checker._get_all_products()
+
+            slug_set: set[str] = set()
+            for r in needs_date:
+                slugs = checker._find_matching_slugs(
+                    r.model.manufacturer, r.model.category, products,
+                )
+                slug_set.update(slugs)
+
+            if not slug_set:
+                return results
+
+            slug_cycles: dict[str, list[dict]] = {}
+            for slug in sorted(slug_set):
+                try:
+                    resp = await checker._fetch(f"{checker.base_url}/{slug}.json")
+                    slug_cycles[slug] = resp.json()
+                except Exception:
+                    logger.warning("supplement: failed to fetch cycles for %s", slug)
+
+            for r in needs_date:
+                slugs = checker._find_matching_slugs(
+                    r.model.manufacturer, r.model.category, products,
+                )
+                for slug in slugs:
+                    cycles = slug_cycles.get(slug)
+                    if not cycles:
+                        continue
+                    matched = checker._match_cycle(r.model.model, cycles)
+                    if not matched:
+                        continue
+                    _, eol_date = checker._determine_status(matched)
+                    if eol_date is None:
+                        continue
+                    r.eol_date = eol_date
+                    r.date_source = "community_database"
+                    support_val = matched.get("support")
+                    if isinstance(support_val, str):
+                        try:
+                            r.eos_date = date.fromisoformat(support_val)
+                        except ValueError:
+                            pass
+                    release_val = matched.get("releaseDate")
+                    if r.release_date is None and isinstance(release_val, str):
+                        try:
+                            r.release_date = date.fromisoformat(release_val)
+                        except ValueError:
+                            pass
+                    supplement_note = "eol-date-supplemented-from-endoflife.date"
+                    if r.notes:
+                        r.notes = f"{r.notes}; {supplement_note}"
+                    else:
+                        r.notes = supplement_note
+                    break
+    except Exception:
+        logger.warning("supplement_missing_dates failed", exc_info=True)
+
+    return results

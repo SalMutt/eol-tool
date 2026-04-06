@@ -99,6 +99,7 @@ class AMDChecker(BaseChecker):
         normalized = self._normalize(model.model)
         gen = self._detect_generation(normalized)
         if gen:
+            eol_date = gen.get("eol_date")
             return EOLResult(
                 model=model,
                 status=gen["status"],
@@ -108,6 +109,8 @@ class AMDChecker(BaseChecker):
                 notes=gen["notes"],
                 eol_reason=gen["eol_reason"],
                 risk_category=gen["risk_category"],
+                eol_date=eol_date,
+                date_source="none",
             )
         ryzen = self._detect_ryzen(normalized)
         if ryzen:

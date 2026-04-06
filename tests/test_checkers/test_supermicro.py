@@ -51,7 +51,7 @@ class TestNormalization:
 
 
 class TestBoardGenerationEOL:
-    """X9/X10 boards -- EOL via generation rules, date_source='none'."""
+    """X9/X10 boards -- EOL via generation rules, no dates."""
 
     async def test_x9_board(self, checker):
         r = await checker.check(_hw("X9SCM-F"))

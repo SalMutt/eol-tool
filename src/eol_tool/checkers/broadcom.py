@@ -97,7 +97,9 @@ class BroadcomChecker(BaseChecker):
 
         entry = _KNOWN_MODELS.get(normalized)
         if entry:
-            return self._make_result(model, entry["status"], entry["notes"])
+            return self._make_result(
+                model, entry["status"], entry["notes"],
+            )
 
         return self._not_found(model, "not-found-in-broadcom-lookup")
 
@@ -123,6 +125,7 @@ class BroadcomChecker(BaseChecker):
             notes=notes,
             eol_reason=EOLReason.MANUFACTURER_DECLARED,
             risk_category=RiskCategory.SUPPORT,
+            date_source="none",
         )
 
     @staticmethod

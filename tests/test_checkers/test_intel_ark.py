@@ -35,32 +35,18 @@ class TestPlaywrightNotInstalled:
 
 
 # ===================================================================
-# Non-CPU models return NOT_FOUND
+# Unsupported categories return NOT_FOUND
 # ===================================================================
 
 
-class TestNonCPU:
-    async def test_nic_returns_not_found(self):
+class TestUnsupportedCategory:
+    async def test_unsupported_category_returns_not_found(self):
         from eol_tool.checkers.intel_ark import IntelARKChecker
 
         checker = IntelARKChecker()
-        r = await checker.check(_hw("X520-DA2", category="nic"))
+        r = await checker.check(_hw("SOMETHING", category="motherboard"))
         assert r.status == EOLStatus.NOT_FOUND
-        assert "non-cpu" in r.notes
-
-    async def test_ssd_returns_not_found(self):
-        from eol_tool.checkers.intel_ark import IntelARKChecker
-
-        checker = IntelARKChecker()
-        r = await checker.check(_hw("660P", category="ssd"))
-        assert r.status == EOLStatus.NOT_FOUND
-
-    async def test_optic_returns_not_found(self):
-        from eol_tool.checkers.intel_ark import IntelARKChecker
-
-        checker = IntelARKChecker()
-        r = await checker.check(_hw("SFP-10GSR-85", category="optic"))
-        assert r.status == EOLStatus.NOT_FOUND
+        assert "unsupported" in r.notes
 
 
 # ===================================================================

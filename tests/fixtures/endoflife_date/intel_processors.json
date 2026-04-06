@@ -56,6 +56,38 @@
     "lts": false
   },
   {
+    "cycle": "sapphire-rapids-xeon",
+    "releaseLabel": "Sapphire Rapids (Xeon Scalable 4th Gen)",
+    "releaseDate": "2023-01-10",
+    "discontinued": false,
+    "eol": false,
+    "lts": false
+  },
+  {
+    "cycle": "ice-lake-xeon",
+    "releaseLabel": "Ice Lake (Xeon Scalable 3rd Gen)",
+    "releaseDate": "2021-04-06",
+    "discontinued": false,
+    "eol": false,
+    "lts": false
+  },
+  {
+    "cycle": "cascade-lake-xeon",
+    "releaseLabel": "Cascade Lake (Xeon Scalable 2nd Gen)",
+    "releaseDate": "2019-04-02",
+    "discontinued": "2023-02-17",
+    "eol": "2025-12-31",
+    "lts": false
+  },
+  {
+    "cycle": "skylake-xeon",
+    "releaseLabel": "Skylake-SP (Xeon Scalable 1st Gen)",
+    "releaseDate": "2017-07-11",
+    "discontinued": "2021-09-30",
+    "eol": "2024-03-01",
+    "lts": false
+  },
+  {
     "cycle": "ivy-bridge-xeon",
     "releaseLabel": "Ivy Bridge (Xeon E5v2/E7v2)",
     "releaseDate": "2012-04-29",

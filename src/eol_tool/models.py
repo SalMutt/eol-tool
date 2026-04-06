@@ -62,5 +62,6 @@ class EOLResult(BaseModel):
     notes: str = ""
     eol_reason: EOLReason = EOLReason.NONE
     risk_category: RiskCategory = RiskCategory.NONE
+    release_date: date | None = None
     date_source: str = "none"
     checker_priority: int = 50

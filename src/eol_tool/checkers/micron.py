@@ -13,6 +13,7 @@ from ..models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategor
 
 # ── SSD product line lookup (substring match) ────────────────────────
 # Longer keys first to avoid partial matches (e.g. "5210" before "52")
+# Tuples: (key, status, notes, eol_date_or_None)
 _SSD_RULES: list[tuple[str, EOLStatus, str]] = [
     ("M510DC", EOLStatus.EOL, "Micron M510DC - very old enterprise SATA, EOL"),
     ("P4MU312", EOLStatus.EOL, "Micron P4MU312 - OEM model, EOL"),
@@ -123,6 +124,7 @@ class MicronChecker(BaseChecker):
                 notes="Crucial P1 NVMe SSD - EOL",
                 eol_reason=EOLReason.PRODUCT_DISCONTINUED,
                 risk_category=RiskCategory.PROCUREMENT,
+                date_source="none",
             )
         # Crucial T705 Gen5 NVMe
         if "T705" in normalized:
@@ -186,12 +188,13 @@ class MicronChecker(BaseChecker):
                     risk_category=RiskCategory.PROCUREMENT
                     if status == EOLStatus.EOL
                     else RiskCategory.NONE,
+                    date_source="none",
                 )
         return None
 
     @staticmethod
     def _make_ssd_result(
-        model: HardwareModel, status: EOLStatus, notes: str
+        model: HardwareModel, status: EOLStatus, notes: str,
     ) -> EOLResult:
         return EOLResult(
             model=model,
@@ -206,6 +209,7 @@ class MicronChecker(BaseChecker):
             risk_category=RiskCategory.PROCUREMENT
             if status == EOLStatus.EOL
             else RiskCategory.NONE,
+            date_source="none",
         )
 
     @staticmethod
@@ -226,4 +230,5 @@ class MicronChecker(BaseChecker):
             if status == EOLStatus.EOL
             else EOLReason.NONE,
             risk_category=risk,
+            date_source="none",
         )

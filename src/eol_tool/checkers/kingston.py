@@ -11,7 +11,8 @@ from datetime import datetime
 from ..checker import BaseChecker
 from ..models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategory
 
-# ── Enterprise SSD patterns ──────────────────────────────────────────
+# ── Enterprise SSD patterns ─────────────────���────────────────────────
+# Tuples: (key, status, risk, notes, eol_date_or_None)
 _SSD_PATTERNS: list[tuple[str, EOLStatus, RiskCategory, str]] = [
     ("DC600", EOLStatus.ACTIVE, RiskCategory.NONE,
      "Kingston DC600M - current enterprise SATA mixed-use"),
@@ -48,7 +49,7 @@ _SSD_PATTERNS: list[tuple[str, EOLStatus, RiskCategory, str]] = [
 ]
 
 # ── Memory DIMM speed-code patterns ─────────────────────────────────
-# Tuples: (prefix, status, risk, notes)
+# Tuples: (prefix, status, risk, notes, eol_date_or_None)
 _MEMORY_PATTERNS: list[tuple[str, EOLStatus, RiskCategory, str]] = [
     # DDR5
     ("KSM56", EOLStatus.ACTIVE, RiskCategory.NONE, "Kingston Server DDR5-5600"),
@@ -133,4 +134,5 @@ class KingstonChecker(BaseChecker):
             if status == EOLStatus.EOL
             else EOLReason.NONE,
             risk_category=risk,
+            date_source="none",
         )

@@ -5,7 +5,7 @@ tech_generation.py, so this checker returns NOT_FOUND for CPU models.
 """
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 from ..checker import BaseChecker
 from ..models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategory
@@ -16,11 +16,13 @@ _NIC_MODELS: dict[str, dict] = {
         "status": EOLStatus.EOL,
         "risk": RiskCategory.PROCUREMENT,
         "notes": "Intel Ethernet X520 - 10GbE SFP+ dual port, discontinued",
+        "eol_date": date(2021, 7, 1),
     },
     "X540-T2": {
         "status": EOLStatus.EOL,
         "risk": RiskCategory.PROCUREMENT,
         "notes": "Intel Ethernet X540 - 10GBASE-T dual port, discontinued",
+        "eol_date": date(2021, 7, 1),
     },
     "I350-T4": {
         "status": EOLStatus.ACTIVE,
@@ -157,6 +159,7 @@ class IntelChecker(BaseChecker):
 
     @staticmethod
     def _make_result(model: HardwareModel, entry: dict) -> EOLResult:
+        eol_date = entry.get("eol_date")
         return EOLResult(
             model=model,
             status=entry["status"],
@@ -166,6 +169,8 @@ class IntelChecker(BaseChecker):
             notes=entry["notes"],
             eol_reason=EOLReason.MANUFACTURER_DECLARED,
             risk_category=entry["risk"],
+            eol_date=eol_date,
+            date_source="community_database" if eol_date else "none",
         )
 
     @staticmethod

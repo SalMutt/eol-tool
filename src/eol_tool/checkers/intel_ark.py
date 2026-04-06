@@ -1,9 +1,9 @@
-"""Intel ARK scraper for CPU lifecycle data.
+"""Intel ARK scraper for CPU, NIC, SSD, and optic lifecycle data.
 
 Fetches real lifecycle data from ark.intel.com product pages including
 Marketing Status, Launch Date, and End of Servicing Updates Date.
-Only uses Playwright for scraping. Only processes CPU category models -
-NICs, SSDs, and optics are left to the static intel.py checker.
+Uses Playwright for scraping. Falls back to the static intel.py checker
+for models not found on ARK.
 """
 
 import logging
@@ -32,6 +32,8 @@ _NOT_FOUND_TTL_DAYS = 1
 _ARK_BASE_URL = "https://ark.intel.com"
 _ARK_SEARCH_URL = "https://ark.intel.com/content/www/us/en/ark.html"
 _INTEL_SEARCH_URL = "https://www.intel.com/content/www/us/en/search.html"
+
+_SUPPORTED_CATEGORIES = frozenset({"cpu", "nic", "ssd", "optic"})
 
 
 # ── SQLite cache helpers ─────────────────────────────────────────────
@@ -126,11 +128,26 @@ def _parse_date(date_str: str) -> date | None:
     return None
 
 
+def _parse_launch_date(date_str: str) -> date | None:
+    """Parse a launch/release date string, using quarter-start for Qn'YY."""
+    if not date_str:
+        return None
+    date_str = date_str.strip().rstrip(".")
+    q_match = re.match(r"Q(\d)\s*'?(\d{2,4})", date_str)
+    if q_match:
+        q = int(q_match.group(1))
+        yr = q_match.group(2)
+        year = int(yr) if len(yr) == 4 else 2000 + int(yr)
+        month = {1: 1, 2: 4, 3: 7, 4: 10}.get(q, 1)
+        return date(year, month, 1)
+    return _parse_date(date_str)
+
+
 # ── Checker ──────────────────────────────────────────────────────────
 
 
 class IntelARKChecker(BaseChecker):
-    """Intel ARK scraper for CPU lifecycle data."""
+    """Intel ARK scraper for CPU, NIC, SSD, and optic lifecycle data."""
 
     manufacturer_name = "Intel"
     priority = 25
@@ -169,8 +186,9 @@ class IntelARKChecker(BaseChecker):
     # ── Public API ────────────────────────────────────────────────
 
     async def check(self, model: HardwareModel) -> EOLResult:
-        if model.category.lower() != "cpu":
-            return self._make_not_found(model, "non-cpu-deferred-to-static-checker")
+        category = model.category.lower()
+        if category not in _SUPPORTED_CATEGORIES:
+            return self._make_not_found(model, "unsupported-category")
 
         if not PLAYWRIGHT_AVAILABLE:
             logger.warning("playwright not installed - Intel ARK scraper unavailable")
@@ -179,32 +197,33 @@ class IntelARKChecker(BaseChecker):
         if self._checker_disabled:
             return self._make_not_found(model, "checker-disabled-chromium-missing")
 
-        model_key = _normalize_key(model.model)
+        model_key = _normalize_key(model.model, category)
+        cache_key = f"{category}:{model_key}"
         conn = _init_cache_db()
         try:
-            cached = _get_cached(conn, model_key)
+            cached = _get_cached(conn, cache_key)
             if cached is not None:
-                logger.info("ARK cache hit: %s", model_key)
+                logger.info("ARK cache hit: %s", cache_key)
                 return _to_result(model, cached)
 
-            data = await self._playwright_lookup(model_key)
+            data = await self._playwright_lookup(model_key, category)
 
             if data is None:
-                _set_cached(conn, model_key, {"result_status": "not_found"})
+                _set_cached(conn, cache_key, {"result_status": "not_found"})
                 return self._make_not_found(model, "not-found-on-intel-ark")
 
             if data.get("result_status") == "timeout":
-                _set_cached(conn, model_key, {"result_status": "not_found"})
+                _set_cached(conn, cache_key, {"result_status": "not_found"})
                 return self._make_not_found(model, "page-timeout")
 
-            _set_cached(conn, model_key, data)
+            _set_cached(conn, cache_key, data)
             return _to_result(model, data)
         finally:
             conn.close()
 
     # ── Playwright lookup ────────────────────────────────────────
 
-    async def _playwright_lookup(self, model_key: str) -> dict | None:
+    async def _playwright_lookup(self, model_key: str, category: str = "cpu") -> dict | None:
         if not self._browser:
             return None
         page = None
@@ -212,7 +231,7 @@ class IntelARKChecker(BaseChecker):
             page = await self._browser.new_page()
             page.set_default_timeout(20000)
 
-            search_term = _prepare_search_term(model_key)
+            search_term = _prepare_search_term(model_key, category)
             logger.info("ARK: searching for '%s' (from key '%s')", search_term, model_key)
 
             # Step 1: Navigate to Intel search page with product filter
@@ -357,16 +376,72 @@ class IntelARKChecker(BaseChecker):
 # ── Module-level helpers ─────────────────────────────────────────────
 
 
-def _normalize_key(model_str: str) -> str:
-    s = re.sub(r"^(?:INTEL\s+)?(?:XEON\s+)?", "", model_str.strip(), flags=re.IGNORECASE)
+def _normalize_key(model_str: str, category: str = "cpu") -> str:
+    cat = category.lower()
+    s = model_str.strip()
+
+    if cat == "nic":
+        s = re.sub(r"^INTEL\s+", "", s, flags=re.IGNORECASE).strip()
+        m = re.match(r"([A-Z]\d{3,4}(?:-[A-Z0-9]+)?)", s, re.IGNORECASE)
+        if m:
+            return m.group(1).upper()
+        return s.split()[0].upper() if s else s
+
+    if cat == "ssd":
+        s = re.sub(r"^(?:INTEL|INT)\s+", "", s, flags=re.IGNORECASE).strip()
+        s = re.sub(r"^SSD\s+", "", s, flags=re.IGNORECASE).strip()
+        return s.upper()
+
+    # CPU / optic: strip INTEL/XEON prefix
+    s = re.sub(r"^(?:INTEL\s+)?(?:XEON\s+)?", "", s, flags=re.IGNORECASE)
     return s.strip()
 
 
-def _prepare_search_term(model_key: str) -> str:
+def _build_ark_query(model: str, category: str) -> str:
+    """Normalize a raw model string into an ARK-friendly search query.
+
+    Handles NIC speed/port suffixes and SSD 'INT' prefixes so that Intel
+    ARK search returns relevant product pages.
+    """
+    cat = category.lower()
+    s = model.strip().upper()
+
+    if cat == "nic":
+        # Strip INTEL prefix
+        s = re.sub(r"^INTEL\s+", "", s).strip()
+        # Extract adapter family: X520-DA2, X540-T2, X710-BM2, I350-T4, etc.
+        m = re.match(r"([A-Z]\d{3,4}(?:-[A-Z0-9]+)?)", s)
+        if m:
+            family = m.group(1)
+            return f"Intel Ethernet {family}"
+        return f"Intel Ethernet {s.split()[0]}"
+
+    if cat == "ssd":
+        # Strip INT/INTEL prefix
+        s = re.sub(r"^(?:INTEL|INT)\s+", "", s).strip()
+        # Strip form factor suffixes: U.2, M.2
+        s = re.sub(r"\s+(?:U\.2|M\.2|2\.5|NVME|SATA|PCIE).*$", "", s).strip()
+        return f"Intel SSD {s}"
+
+    # For CPU/optic, fall through to _prepare_search_term
+    return _prepare_search_term(s, cat)
+
+
+def _prepare_search_term(model_key: str, category: str = "cpu") -> str:
     """Convert a normalized model key to a searchable term for Intel ARK."""
+    cat = category.lower()
     s = model_key.strip()
 
-    # Strip residual XEON/INTEL prefix
+    if cat == "nic":
+        return _build_ark_query(s, cat)
+
+    if cat == "ssd":
+        return _build_ark_query(s, cat)
+
+    if cat == "optic":
+        return s
+
+    # CPU: strip residual XEON/INTEL prefix
     s = re.sub(r"^(?:INTEL\s+)?(?:XEON\s+)?", "", s, flags=re.IGNORECASE).strip()
 
     # Scalable Xeons: "6132 GOLD" -> "Xeon Gold 6132"
@@ -467,6 +542,7 @@ def _to_result(model: HardwareModel, data: dict) -> EOLResult:
         )
 
     eol_date = _parse_date(data.get("eol_date", ""))
+    release_date = _parse_launch_date(data.get("launch_date", ""))
     notes_parts = []
     if data.get("marketing_status"):
         notes_parts.append(f"Marketing Status: {data['marketing_status']}")
@@ -479,6 +555,7 @@ def _to_result(model: HardwareModel, data: dict) -> EOLResult:
         model=model,
         status=status,
         eol_date=eol_date,
+        release_date=release_date,
         checked_at=datetime.now(),
         source_name="intel-ark",
         confidence=90,

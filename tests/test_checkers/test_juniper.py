@@ -515,27 +515,27 @@ class TestEX4200Models:
         assert r.status == EOLStatus.EOL
         assert r.risk_category == RiskCategory.SECURITY
         assert "uplink-module" in r.notes
-        assert r.date_source == "none"
-        assert r.eol_date is None
+        assert r.date_source == "manufacturer_confirmed"
+        assert r.eol_date == date(2014, 1, 31)
 
     async def test_ex_um_4x4sfp(self, checker):
         r = checker._classify_model(_hw("EX-UM-4X4SFP"))
         assert r.status == EOLStatus.EOL
         assert "uplink-module" in r.notes
-        assert r.date_source == "none"
+        assert r.date_source == "manufacturer_confirmed"
 
     async def test_ex_pwr_320_ac(self, checker):
         r = checker._classify_model(_hw("EX-PWR-320-AC"))
         assert r.status == EOLStatus.EOL
         assert r.risk_category == RiskCategory.SECURITY
         assert "power-supply" in r.notes
-        assert r.date_source == "none"
+        assert r.date_source == "manufacturer_confirmed"
 
     async def test_ex_pwr_320w_ac(self, checker):
         r = checker._classify_model(_hw("EX-PWR-320W-AC"))
         assert r.status == EOLStatus.EOL
         assert "power-supply" in r.notes
-        assert r.date_source == "none"
+        assert r.date_source == "manufacturer_confirmed"
 
 
 # ===================================================================
@@ -711,16 +711,23 @@ class TestDateSource:
             assert r.date_source == "none", f"{model_str}: expected date_source=none"
             assert r.eol_date is None, f"{model_str}: expected no eol_date"
 
-    def test_static_rules_have_no_dates(self, checker):
-        """Static rule results (components, accessories) must have date_source=none."""
+    def test_static_rules_non_ex4200_have_no_dates(self, checker):
+        """Non-EX4200 static rule results must have date_source=none."""
         static_models = [
-            "EX-UM-2X4SFP", "EX-PWR-320-AC", "QFX-EM-4Q",
-            "QFX520048Y-APSU-AO", "CHAS-BP3-MX480",
+            "QFX-EM-4Q", "QFX520048Y-APSU-AO", "CHAS-BP3-MX480",
         ]
         for model_str in static_models:
             r = checker._classify_model(_hw(model_str))
             assert r.date_source == "none", f"{model_str}: expected date_source=none"
             assert r.eol_date is None, f"{model_str}: expected no eol_date"
+
+    def test_ex4200_components_inherit_parent_date(self, checker):
+        """EX4200 components inherit the parent chassis date."""
+        ex4200_models = ["EX-UM-2X4SFP", "EX-PWR-320-AC"]
+        for model_str in ex4200_models:
+            r = checker._classify_model(_hw(model_str))
+            assert r.date_source == "manufacturer_confirmed", f"{model_str}"
+            assert r.eol_date == date(2014, 1, 31), f"{model_str}"
 
 
 # ===================================================================

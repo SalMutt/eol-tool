@@ -19,8 +19,8 @@ _ACTIVE_SUFFIXES = {
     "EFRX": "WD Red NAS - current generation",
 }
 
-# EOL product lines
-_EOL_SUFFIXES = {
+# EOL product lines: suffix -> (notes, eol_date)
+_EOL_SUFFIXES: dict[str, str] = {
     "FALS": "WD Caviar Black / RE - old consumer/enterprise, EOL",
     "FAEX": "WD Caviar Black / RE - old consumer/enterprise, EOL",
     "FBYS": "WD RE - old enterprise, EOL",
@@ -150,6 +150,7 @@ class WDChecker(BaseChecker):
             notes=notes,
             eol_reason=eol_reason,
             risk_category=risk,
+            date_source="none",
         )
 
     @staticmethod

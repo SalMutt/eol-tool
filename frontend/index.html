@@ -107,7 +107,7 @@ function DateSourceBadge({ dateSource }) {
 }
 
 function ModelTable({ models }) {
-  const headers = ["Model", "Category", "Status", "Risk", "EOL Reason", "EOL Date", "Date Source", "Confidence", "Notes"];
+  const headers = ["Model", "Category", "Status", "Risk", "EOL Reason", "EOL Date", "Release Date", "Date Source", "Confidence", "Notes"];
   return e("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
     e("thead", null,
       e("tr", { style: { background: "#0a0a0d" } },
@@ -150,6 +150,7 @@ function ModelTable({ models }) {
           e("td", { style: { padding: "8px 12px" } }, e(RiskBadge, { risk: m.risk })),
           e("td", { style: { padding: "8px 12px", color: "#71717a", fontSize: 11, fontFamily: mono } }, m.eolReason && m.eolReason !== "none" ? m.eolReason.replace(/_/g, " ") : "—"),
           e("td", { style: { padding: "8px 12px" } }, eolDateCell),
+          e("td", { style: { padding: "8px 12px", color: "#a1a1aa", fontSize: 12, fontFamily: mono } }, m.releaseDate || "\u2014"),
           e("td", { style: { padding: "8px 12px" } }, e(DateSourceBadge, { dateSource: m.dateSource })),
           e("td", { style: { padding: "8px 12px" } },
             m.confidence ? e("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
@@ -627,6 +628,7 @@ function App() {
               risk: (r["Risk Category"] || r["risk_category"] || "none").toLowerCase().trim(),
               originalItem: r["Original_Item"] || r["original_item"] || "",
               dateSource: r["Date Source"] || r["date_source"] || "none",
+              releaseDate: r["Release Date"] || r["release_date"] || "",
             };
           }).filter(function(m) { return m.model; });
           setData({ models: models, fileName: file.name });
@@ -662,6 +664,7 @@ function App() {
                   risk: (r.risk_category || r.risk || "none").toLowerCase().trim(),
                   originalItem: r.original_item || r.originalItem || "",
                   dateSource: r.date_source || r.dateSource || "none",
+                  releaseDate: r.release_date || r.releaseDate || "",
                 };
               }).filter(function(m) { return m.model; });
               setData({ models: models, fileName: file.name });
@@ -765,6 +768,7 @@ function App() {
         "EOL Status": (m.status || "").toUpperCase(),
         "EOL Date": m.eolDate || "",
         "EOS Date": m.eosDate || "",
+        "Release Date": m.releaseDate || "",
         "Date Source": m.dateSource === "manufacturer_confirmed" ? "Manufacturer Confirmed" : m.dateSource === "community_database" ? "Community Database" : "Not Available",
         "Risk Category": (m.risk || "none") !== "none" ? m.risk.charAt(0).toUpperCase() + m.risk.slice(1) : "",
         "EOL Reason": (m.eolReason || "none") !== "none" ? m.eolReason.replace(/_/g, " ") : "",
@@ -792,6 +796,7 @@ function App() {
       { wch: 12 },  // EOL Status
       { wch: 12 },  // EOL Date
       { wch: 12 },  // EOS Date
+      { wch: 12 },  // Release Date
       { wch: 22 },  // Date Source
       { wch: 14 },  // Risk Category
       { wch: 22 },  // EOL Reason
@@ -990,6 +995,10 @@ function App() {
               sr.eos_date ? e("div", { style: { marginBottom: 12 } },
                 e("div", { style: { fontSize: 11, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, fontFamily: mono } }, "EOS Date"),
                 e("div", { style: { fontSize: 14, fontFamily: mono, color: "#a1a1aa" } }, sr.eos_date),
+              ) : null,
+              sr.release_date ? e("div", { style: { marginBottom: 12 } },
+                e("div", { style: { fontSize: 11, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, fontFamily: mono } }, "Release Date"),
+                e("div", { style: { fontSize: 14, fontFamily: mono, color: "#a1a1aa" } }, sr.release_date),
               ) : null,
             ),
             // Right: metadata

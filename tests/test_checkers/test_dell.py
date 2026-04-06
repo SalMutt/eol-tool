@@ -65,13 +65,13 @@ class TestEOLServers:
         assert r.risk_category == RiskCategory.SUPPORT
         assert r.confidence == 85
         assert "R730xd" in r.notes
-        assert r.date_source == "none"
+        assert r.date_source == "community_database"
 
     async def test_r630_full(self, checker):
         r = await checker.check(_hw("DELL POWEREDGE R630"))
         assert r.status == EOLStatus.EOL
         assert r.confidence == 85
-        assert r.date_source == "none"
+        assert r.date_source == "community_database"
 
     async def test_r630_with_config(self, checker):
         r = await checker.check(_hw("DELL R630 W/2683V4"))
@@ -141,19 +141,19 @@ class TestNICs:
 
 
 class TestRAIDControllers:
-    async def test_h330_no_date(self, checker):
+    async def test_h330_has_date(self, checker):
         r = await checker.check(_hw("DELL 4Y5H1 PERC H330 CONT CARD", category="raid-controller"))
         assert r.status == EOLStatus.EOL
         assert r.risk_category == RiskCategory.PROCUREMENT
-        assert r.date_source == "none"
-        assert r.eol_date is None
+        assert r.date_source == "community_database"
+        assert r.eol_date is not None
 
     async def test_h330_skips_api(self, httpx_mock):
         """PERC H330 should not query endoflife.date — it's not a PowerEdge."""
         async with DellChecker() as c:
             r = await c.check(_hw("DELL 4Y5H1 PERC H330 CONT CARD", category="raid-controller"))
         assert r.status == EOLStatus.EOL
-        assert r.date_source == "none"
+        assert r.date_source == "community_database"
         # No HTTP requests should have been made at all for a RAID controller
         assert len(httpx_mock.get_requests()) == 0
 

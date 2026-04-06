@@ -68,14 +68,15 @@ class TestWriteResults:
         write_results(_sample_results(), out)
         wb = openpyxl.load_workbook(out)
         ws = wb["EOL Results"]
-        headers = [ws.cell(row=1, column=c).value for c in range(1, 16)]
+        headers = [ws.cell(row=1, column=c).value for c in range(1, 17)]
         assert headers[0] == "Model"
         assert headers[4] == "EOL Status"
-        assert headers[7] == "Date Source"
-        assert headers[11] == "Original_Item"
-        assert headers[12] == "Notes"
-        assert headers[13] == "EOL Reason"
-        assert headers[14] == "Risk Category"
+        assert headers[7] == "Release Date"
+        assert headers[8] == "Date Source"
+        assert headers[12] == "Original_Item"
+        assert headers[13] == "Notes"
+        assert headers[14] == "EOL Reason"
+        assert headers[15] == "Risk Category"
         wb.close()
 
     def test_data_rows(self, tmp_path):
@@ -126,10 +127,10 @@ class TestWriteResults:
         write_results(_sample_results(), out)
         wb = openpyxl.load_workbook(out)
         ws = wb["EOL Results"]
-        assert ws.cell(row=2, column=14).value == "community_data"
-        assert ws.cell(row=2, column=15).value == "security"
-        assert ws.cell(row=3, column=15).value == "support"
-        assert ws.cell(row=4, column=15).value == "procurement"
+        assert ws.cell(row=2, column=15).value == "community_data"
+        assert ws.cell(row=2, column=16).value == "security"
+        assert ws.cell(row=3, column=16).value == "support"
+        assert ws.cell(row=4, column=16).value == "procurement"
         wb.close()
 
     def test_risk_category_coloring(self, tmp_path):
@@ -138,10 +139,10 @@ class TestWriteResults:
         wb = openpyxl.load_workbook(out)
         ws = wb["EOL Results"]
         # security row
-        risk_cell = ws.cell(row=2, column=15)
+        risk_cell = ws.cell(row=2, column=16)
         assert risk_cell.fill.fgColor.rgb == "00FFE0E0"
         # support row
-        risk_cell = ws.cell(row=3, column=15)
+        risk_cell = ws.cell(row=3, column=16)
         assert risk_cell.fill.fgColor.rgb == "00FFF0E0"
         wb.close()
 
@@ -151,9 +152,9 @@ class TestWriteResults:
         wb = openpyxl.load_workbook(out)
         ws = wb["EOL Results"]
         # Original_Item column should contain the original_item value
-        assert ws.cell(row=2, column=12).value == "EX4300-48T-AFI"
+        assert ws.cell(row=2, column=13).value == "EX4300-48T-AFI"
         # Row without original_item should be empty
-        assert not ws.cell(row=3, column=12).value
+        assert not ws.cell(row=3, column=13).value
         wb.close()
 
     def test_model_column_uses_original_item(self, tmp_path):
