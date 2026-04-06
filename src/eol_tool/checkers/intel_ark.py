@@ -234,22 +234,17 @@ class IntelARKChecker(BaseChecker):
             search_term = _prepare_search_term(model_key, category)
             logger.info("ARK: searching for '%s' (from key '%s')", search_term, model_key)
 
-            # Step 1: Navigate to Intel search page with product filter
-            encoded = search_term.replace(" ", "%20")
-            search_url = f"{_INTEL_SEARCH_URL}#q={encoded}&sort=relevancy"
-            logger.info("ARK: navigating to Intel search: %s", search_url)
-            await page.goto(search_url, wait_until="networkidle", timeout=20000)
-            await page.wait_for_timeout(5000)
+            spec_url = None
 
-            title = await page.title()
-            logger.info("ARK: search page loaded, title='%s', URL=%s", title, page.url)
-
-            # Step 2: Find product specification links in results
-            spec_url = await self._find_product_link(page, search_term)
-
-            if not spec_url:
-                logger.warning("ARK: no product links in Intel search, trying ARK search page")
-                spec_url = await self._try_ark_search(page, search_term)
+            if category in ("nic", "ssd"):
+                # NICs and SSDs: try ARK direct search first
+                spec_url = await self._try_ark_direct_search(page, search_term)
+                if not spec_url:
+                    logger.info("ARK: direct search miss, falling back to intel.com search")
+                    spec_url = await self._try_intel_search(page, search_term)
+            else:
+                # CPUs and optics: use intel.com search
+                spec_url = await self._try_intel_search(page, search_term)
 
             if not spec_url:
                 logger.warning("ARK: no product page found for '%s'", model_key)
@@ -290,33 +285,130 @@ class IntelARKChecker(BaseChecker):
             if page:
                 await page.close()
 
+    async def _try_ark_direct_search(self, page, search_term: str) -> str | None:
+        """Search ARK directly for a product (preferred for NICs/SSDs)."""
+        encoded = search_term.replace(" ", "+")
+        url = (
+            "https://ark.intel.com/content/www/us/en/ark/search.html"
+            f"?_charset_=UTF-8&q={encoded}"
+        )
+        logger.info("ARK: direct ARK search: %s", url)
+        try:
+            await page.goto(url, wait_until="networkidle", timeout=20000)
+            await page.wait_for_timeout(3000)
+        except Exception as exc:
+            logger.warning("ARK: direct ARK search navigation failed: %s", exc)
+            return None
+
+        current_url = page.url
+        logger.info("ARK: after direct search, URL: %s", current_url)
+
+        # ARK may redirect directly to a product page on exact match
+        if "/products/sku/" in current_url or "/ark/products/" in current_url:
+            logger.info("ARK: direct search redirected to product page")
+            return current_url
+
+        # Otherwise look for product links in search results
+        return await self._find_product_link(page, search_term)
+
+    async def _try_intel_search(self, page, search_term: str) -> str | None:
+        """Search via intel.com search page (original strategy)."""
+        encoded = search_term.replace(" ", "%20")
+        search_url = f"{_INTEL_SEARCH_URL}#q={encoded}&sort=relevancy"
+        logger.info("ARK: navigating to Intel search: %s", search_url)
+        await page.goto(search_url, wait_until="networkidle", timeout=20000)
+        await page.wait_for_timeout(5000)
+
+        title = await page.title()
+        logger.info("ARK: search page loaded, title='%s', URL=%s", title, page.url)
+
+        spec_url = await self._find_product_link(page, search_term)
+
+        if not spec_url:
+            logger.warning("ARK: no product links in Intel search, trying ARK search page")
+            spec_url = await self._try_ark_search(page, search_term)
+
+        return spec_url
+
     async def _find_product_link(self, page, search_term: str) -> str | None:
-        """Find a product specifications URL from Intel search results."""
-        # Look for /products/sku/ links (new Intel.com format)
-        links = await page.query_selector_all("a[href*='/products/sku/']")
-        for link in links:
-            if not await link.is_visible():
-                continue
-            href = await link.get_attribute("href") or ""
-            text = (await link.inner_text()).strip()
-            logger.info("ARK: found product link: '%s' -> %s", text[:60], href[:100])
-            if "/specifications" in href:
-                return href
-            # Rewrite to specifications URL
-            base = href.rsplit("/", 1)[0]
+        """Find the best-matching product specifications URL from search results."""
+        selectors = [
+            "a[href*='/products/sku/']",
+            "a[href*='/ark/products/']",
+            "a[href*='ark.intel.com/content/www/us/en/ark/products']",
+            "a.ark-accessible-color",
+            "a.result-title[href*='ark']",
+            ".search-result a[href*='ark']",
+        ]
+
+        # Collect all visible product links
+        seen_hrefs: set[str] = set()
+        candidates: list[tuple[str, str]] = []  # (href, text)
+        for selector in selectors:
+            links = await page.query_selector_all(selector)
+            for link in links:
+                if not await link.is_visible():
+                    continue
+                href = await link.get_attribute("href") or ""
+                if not href or href in seen_hrefs:
+                    continue
+                seen_hrefs.add(href)
+                text = (await link.inner_text()).strip()
+                candidates.append((href, text))
+
+        if not candidates:
+            # Debug: log visible links to help diagnose search failures
+            all_links = await page.query_selector_all("a[href]")
+            visible_count = 0
+            for link in all_links[:50]:
+                if await link.is_visible():
+                    href = await link.get_attribute("href") or ""
+                    if visible_count < 5:
+                        logger.debug("ARK: visible link on page: %s", href[:120])
+                    visible_count += 1
+            logger.info(
+                "ARK: %d visible links found, none matched product selectors",
+                visible_count,
+            )
+            return None
+
+        # Score candidates by relevance to search term
+        core = _extract_core_model(search_term)
+        core_lower = core.lower()
+        family = core.split("-")[0].lower() if "-" in core else ""
+        term_words = {w.lower() for w in search_term.split() if len(w) > 2}
+
+        scored: list[tuple[int, str, str]] = []
+        for href, text in candidates:
+            text_lower = text.lower()
+            if core_lower in text_lower:
+                score = 100
+            elif family and family in text_lower:
+                score = 50
+            elif term_words & {w.lower() for w in text.split()}:
+                score = 10
+            else:
+                score = 1
+            scored.append((score, href, text))
+
+        scored.sort(key=lambda t: t[0], reverse=True)
+
+        # Log top candidates for diagnostics
+        for score, href, text in scored[:3]:
+            logger.info(
+                "ARK: candidate (score=%d): '%s' -> %s", score, text[:60], href[:100]
+            )
+
+        best_score, best_href, best_text = scored[0]
+        if best_score < 50:
+            logger.info("ARK: best match score %d too low (need >=50), rejecting", best_score)
+            return None
+        if "/products/sku/" in best_href:
+            if "/specifications" in best_href:
+                return best_href
+            base = best_href.rsplit("/", 1)[0]
             return f"{base}/specifications.html"
-
-        # Also check for ARK-format links
-        links = await page.query_selector_all("a[href*='/ark/products/']")
-        for link in links:
-            if not await link.is_visible():
-                continue
-            href = await link.get_attribute("href") or ""
-            text = (await link.inner_text()).strip()
-            logger.info("ARK: found ARK product link: '%s' -> %s", text[:60], href[:100])
-            return href
-
-        return None
+        return best_href
 
     async def _try_ark_search(self, page, search_term: str) -> str | None:
         """Try Intel ARK search page as fallback."""
@@ -374,6 +466,22 @@ class IntelARKChecker(BaseChecker):
 
 
 # ── Module-level helpers ─────────────────────────────────────────────
+
+
+def _extract_core_model(search_term: str) -> str:
+    """Extract the core model identifier from an ARK search term.
+
+    'Intel Ethernet X520-DA2' -> 'X520-DA2'
+    'Intel SSD S3500' -> 'S3500'
+    'Intel SSD D3-S4510' -> 'D3-S4510'
+    'E5-2683V4' -> 'E5-2683V4'
+    """
+    s = search_term.strip()
+    for prefix in ("Intel Ethernet ", "Intel SSD ", "Intel "):
+        if s.upper().startswith(prefix.upper()):
+            s = s[len(prefix) :]
+            break
+    return s.strip()
 
 
 def _normalize_key(model_str: str, category: str = "cpu") -> str:
