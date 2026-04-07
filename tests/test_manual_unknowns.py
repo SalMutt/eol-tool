@@ -79,7 +79,7 @@ async def test_corsair_ddr5_active(checker):
 
 @pytest.mark.asyncio
 async def test_transcend_ssd225s_active(checker):
-    result = await checker.check(_hw("SSD225S", "Transcend"))
+    result = await checker.check(_hw("TRAN SSD225S", "Transcend"))
     assert result.status == EOLStatus.ACTIVE
 
 

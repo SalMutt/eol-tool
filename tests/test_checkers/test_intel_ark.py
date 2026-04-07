@@ -2,13 +2,11 @@
 
 import sqlite3
 from datetime import datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from eol_tool.models import EOLReason, EOLStatus, HardwareModel, RiskCategory
-
-pytestmark = pytest.mark.playwright
 
 
 def _hw(model: str, category: str = "cpu", manufacturer: str = "Intel") -> HardwareModel:
@@ -20,6 +18,7 @@ def _hw(model: str, category: str = "cpu", manufacturer: str = "Intel") -> Hardw
 # ===================================================================
 
 
+@pytest.mark.playwright
 class TestPlaywrightNotInstalled:
     async def test_returns_not_found_when_playwright_missing(self):
         with patch.dict(
@@ -39,6 +38,7 @@ class TestPlaywrightNotInstalled:
 # ===================================================================
 
 
+@pytest.mark.playwright
 class TestUnsupportedCategory:
     async def test_unsupported_category_returns_not_found(self):
         from eol_tool.checkers.intel_ark import IntelARKChecker
@@ -308,3 +308,278 @@ class TestRegistration:
 
         checkers = get_checkers("Intel")
         assert len(checkers) >= 2
+
+
+# ===================================================================
+# Search term construction
+# ===================================================================
+
+
+class TestSearchTermConstruction:
+    def test_e2xxx_basic(self):
+        from eol_tool.checkers.intel_ark import _prepare_search_term
+
+        assert _prepare_search_term("E-2136", "cpu") == "Intel Xeon E-2136 Processor"
+
+    def test_e2xxx_with_suffix(self):
+        from eol_tool.checkers.intel_ark import _prepare_search_term
+
+        assert _prepare_search_term("E-2288G", "cpu") == "Intel Xeon E-2288G Processor"
+
+    def test_e5_with_v_suffix(self):
+        from eol_tool.checkers.intel_ark import _prepare_search_term
+
+        assert (
+            _prepare_search_term("E5-2683V4", "cpu")
+            == "Intel Xeon E5-2683 v4 Processor"
+        )
+
+    def test_e3_with_v_suffix(self):
+        from eol_tool.checkers.intel_ark import _prepare_search_term
+
+        assert (
+            _prepare_search_term("E3-1270V5", "cpu")
+            == "Intel Xeon E3-1270 v5 Processor"
+        )
+
+    def test_e7_without_v_suffix(self):
+        from eol_tool.checkers.intel_ark import _prepare_search_term
+
+        assert _prepare_search_term("E7-8890", "cpu") == "Intel Xeon E7-8890 Processor"
+
+    def test_scalable_silver(self):
+        from eol_tool.checkers.intel_ark import _prepare_search_term
+
+        assert (
+            _prepare_search_term("SILVER 4310", "cpu")
+            == "Intel Xeon Silver 4310 Processor"
+        )
+
+    def test_scalable_gold_with_suffix(self):
+        from eol_tool.checkers.intel_ark import _prepare_search_term
+
+        assert (
+            _prepare_search_term("GOLD 5412U", "cpu")
+            == "Intel Xeon Gold 5412U Processor"
+        )
+
+    def test_scalable_platinum(self):
+        from eol_tool.checkers.intel_ark import _prepare_search_term
+
+        assert (
+            _prepare_search_term("PLATINUM 8380", "cpu")
+            == "Intel Xeon Platinum 8380 Processor"
+        )
+
+    def test_scalable_number_first(self):
+        from eol_tool.checkers.intel_ark import _prepare_search_term
+
+        assert (
+            _prepare_search_term("6132 GOLD", "cpu")
+            == "Intel Xeon Gold 6132 Processor"
+        )
+
+    def test_nic_unchanged(self):
+        from eol_tool.checkers.intel_ark import _prepare_search_term
+
+        result = _prepare_search_term("X520-DA2", "nic")
+        assert "Intel Ethernet" in result
+
+    def test_ssd_unchanged(self):
+        from eol_tool.checkers.intel_ark import _prepare_search_term
+
+        result = _prepare_search_term("D3-S4510", "ssd")
+        assert "Intel SSD" in result
+
+
+# ===================================================================
+# Google search - URL extraction
+# ===================================================================
+
+
+def _make_mock_link(href: str) -> AsyncMock:
+    """Create a mock Playwright element handle with a given href."""
+    link = AsyncMock()
+    link.get_attribute = AsyncMock(return_value=href)
+    return link
+
+
+def _make_mock_page(
+    body_text: str = "Search results",
+    links: list | None = None,
+    selector_raises: bool = False,
+) -> AsyncMock:
+    """Create a mock Playwright page for Google search tests."""
+    page = AsyncMock()
+    page.wait_for_timeout = AsyncMock()
+    page.goto = AsyncMock()
+    page.inner_text = AsyncMock(return_value=body_text)
+    if selector_raises:
+        page.wait_for_selector = AsyncMock(side_effect=Exception("timeout"))
+    else:
+        page.wait_for_selector = AsyncMock()
+    page.query_selector_all = AsyncMock(return_value=links or [])
+    return page
+
+
+@pytest.mark.playwright
+class TestGoogleSearch:
+    async def test_extracts_direct_url(self):
+        from eol_tool.checkers.intel_ark import IntelARKChecker
+
+        url = "https://www.intel.com/content/www/us/en/products/sku/120477/intel-xeon-e2136-processor/specifications.html"
+        link = _make_mock_link(url)
+        page = _make_mock_page(links=[link])
+
+        checker = IntelARKChecker()
+        result = await checker._try_google_search("Intel Xeon E-2136 Processor", page)
+        assert result == url
+
+    async def test_extracts_url_from_google_redirect(self):
+        from eol_tool.checkers.intel_ark import IntelARKChecker
+
+        real_url = "https://www.intel.com/content/www/us/en/products/sku/120477/intel-xeon-e2136-processor/specifications.html"
+        wrapped = f"/url?q={real_url}&sa=U&ved=abc123"
+        link = _make_mock_link(wrapped)
+        page = _make_mock_page(links=[link])
+
+        checker = IntelARKChecker()
+        result = await checker._try_google_search("Intel Xeon E-2136 Processor", page)
+        assert result == real_url
+
+    async def test_appends_specifications_to_bare_url(self):
+        from eol_tool.checkers.intel_ark import IntelARKChecker
+
+        bare_url = "https://www.intel.com/content/www/us/en/products/sku/120477/intel-xeon-e2136-processor.html"
+        link = _make_mock_link(bare_url)
+        page = _make_mock_page(links=[link])
+
+        checker = IntelARKChecker()
+        result = await checker._try_google_search("Intel Xeon E-2136 Processor", page)
+        assert result is not None
+        assert "/specifications.html" in result
+
+    async def test_captcha_returns_none(self):
+        from eol_tool.checkers.intel_ark import IntelARKChecker
+
+        page = _make_mock_page(
+            body_text="Our systems have detected unusual traffic from your computer"
+        )
+
+        checker = IntelARKChecker()
+        result = await checker._try_google_search("Intel Xeon E-2136 Processor", page)
+        assert result is None
+
+    async def test_no_results_returns_none(self):
+        from eol_tool.checkers.intel_ark import IntelARKChecker
+
+        page = _make_mock_page(links=[])
+
+        checker = IntelARKChecker()
+        result = await checker._try_google_search("Intel Xeon E-2136 Processor", page)
+        assert result is None
+
+    async def test_selector_timeout_returns_none(self):
+        from eol_tool.checkers.intel_ark import IntelARKChecker
+
+        page = _make_mock_page(selector_raises=True)
+
+        checker = IntelARKChecker()
+        result = await checker._try_google_search("Intel Xeon E-2136 Processor", page)
+        assert result is None
+
+    async def test_exception_returns_none(self):
+        from eol_tool.checkers.intel_ark import IntelARKChecker
+
+        page = AsyncMock()
+        page.wait_for_timeout = AsyncMock(side_effect=Exception("network error"))
+
+        checker = IntelARKChecker()
+        result = await checker._try_google_search("Intel Xeon E-2136 Processor", page)
+        assert result is None
+
+
+# ===================================================================
+# Strategy chain fallthrough
+# ===================================================================
+
+
+@pytest.mark.playwright
+class TestStrategyChain:
+    async def test_google_success_skips_other_strategies(self):
+        from eol_tool.checkers.intel_ark import IntelARKChecker
+
+        checker = IntelARKChecker()
+        checker._browser = MagicMock()
+
+        mock_page = AsyncMock()
+        mock_page.set_default_timeout = MagicMock()
+        mock_page.url = "https://www.intel.com/content/www/us/en/products/sku/120477/specifications.html"
+        mock_page.inner_text = AsyncMock(
+            return_value="Marketing Status Launched\nLaunch Date Q1'19\n"
+        )
+        mock_page.close = AsyncMock()
+        checker._browser.new_page = AsyncMock(return_value=mock_page)
+
+        google_url = "https://www.intel.com/content/www/us/en/products/sku/120477/specifications.html"
+        checker._try_google_search = AsyncMock(return_value=google_url)
+        checker._try_ark_direct_search = AsyncMock(return_value=None)
+        checker._try_intel_search = AsyncMock(return_value=None)
+        checker._try_ark_search = AsyncMock(return_value=None)
+
+        result = await checker._playwright_lookup("E-2136", "cpu")
+        assert result is not None
+        checker._try_google_search.assert_called_once()
+        checker._try_ark_direct_search.assert_not_called()
+        checker._try_intel_search.assert_not_called()
+        checker._try_ark_search.assert_not_called()
+
+    async def test_google_fails_tries_ark_direct(self):
+        from eol_tool.checkers.intel_ark import IntelARKChecker
+
+        checker = IntelARKChecker()
+        checker._browser = MagicMock()
+
+        mock_page = AsyncMock()
+        mock_page.set_default_timeout = MagicMock()
+        mock_page.url = "https://ark.intel.com/content/www/us/en/products/sku/120477/specifications.html"
+        mock_page.inner_text = AsyncMock(
+            return_value="Marketing Status Launched\nLaunch Date Q1'19\n"
+        )
+        mock_page.close = AsyncMock()
+        checker._browser.new_page = AsyncMock(return_value=mock_page)
+
+        ark_url = "https://ark.intel.com/content/www/us/en/products/sku/120477/specifications.html"
+        checker._try_google_search = AsyncMock(return_value=None)
+        checker._try_ark_direct_search = AsyncMock(return_value=ark_url)
+        checker._try_intel_search = AsyncMock(return_value=None)
+        checker._try_ark_search = AsyncMock(return_value=None)
+
+        result = await checker._playwright_lookup("E-2136", "cpu")
+        assert result is not None
+        checker._try_google_search.assert_called_once()
+        checker._try_ark_direct_search.assert_called_once()
+        checker._try_intel_search.assert_not_called()
+
+    async def test_all_strategies_fail_returns_none(self):
+        from eol_tool.checkers.intel_ark import IntelARKChecker
+
+        checker = IntelARKChecker()
+        checker._browser = MagicMock()
+
+        mock_page = AsyncMock()
+        mock_page.set_default_timeout = MagicMock()
+        mock_page.close = AsyncMock()
+        checker._browser.new_page = AsyncMock(return_value=mock_page)
+
+        checker._try_google_search = AsyncMock(return_value=None)
+        checker._try_ark_direct_search = AsyncMock(return_value=None)
+        checker._try_intel_search = AsyncMock(return_value=None)
+        checker._try_ark_search = AsyncMock(return_value=None)
+
+        result = await checker._playwright_lookup("MYSTERY-9999", "cpu")
+        assert result is None
+        checker._try_google_search.assert_called_once()
+        checker._try_ark_direct_search.assert_called_once()
+        checker._try_intel_search.assert_called_once()
+        checker._try_ark_search.assert_called_once()

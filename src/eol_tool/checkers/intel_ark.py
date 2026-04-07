@@ -9,6 +9,7 @@ for models not found on ARK.
 import logging
 import re
 import sqlite3
+import urllib.parse
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -236,15 +237,28 @@ class IntelARKChecker(BaseChecker):
 
             spec_url = None
 
-            if category in ("nic", "ssd"):
-                # NICs and SSDs: try ARK direct search first
+            # Strategy 1: Google site-restricted search
+            spec_url = await self._try_google_search(search_term, page)
+            if spec_url:
+                logger.info("Found %s via Google site-restricted search", model_key)
+
+            # Strategy 2: ARK direct search
+            if not spec_url:
                 spec_url = await self._try_ark_direct_search(page, search_term)
-                if not spec_url:
-                    logger.info("ARK: direct search miss, falling back to intel.com search")
-                    spec_url = await self._try_intel_search(page, search_term)
-            else:
-                # CPUs and optics: use intel.com search
+                if spec_url:
+                    logger.info("Found %s via ARK direct search", model_key)
+
+            # Strategy 3: intel.com search
+            if not spec_url:
                 spec_url = await self._try_intel_search(page, search_term)
+                if spec_url:
+                    logger.info("Found %s via Intel.com search", model_key)
+
+            # Strategy 4: ARK search page
+            if not spec_url:
+                spec_url = await self._try_ark_search(page, search_term)
+                if spec_url:
+                    logger.info("Found %s via ARK search page", model_key)
 
             if not spec_url:
                 logger.warning("ARK: no product page found for '%s'", model_key)
@@ -285,6 +299,64 @@ class IntelARKChecker(BaseChecker):
             if page:
                 await page.close()
 
+    async def _try_google_search(self, search_term: str, page) -> str | None:
+        """Search Google with site restriction to find Intel product pages."""
+        try:
+            await page.wait_for_timeout(2000)  # Rate limiting
+
+            encoded = search_term.replace(" ", "+")
+            url = (
+                "https://www.google.com/search?q="
+                f"site:intel.com/content/www/us/en/products/sku+{encoded}"
+            )
+            logger.info("ARK: Google site search: %s", url)
+
+            await page.goto(url, wait_until="networkidle", timeout=10000)
+
+            # Check for CAPTCHA / bot detection
+            body_text = await page.inner_text("body")
+            if "unusual traffic" in body_text.lower():
+                logger.warning(
+                    "ARK: Google CAPTCHA detected, falling through to next strategy"
+                )
+                return None
+
+            # Wait for search results
+            try:
+                await page.wait_for_selector("div#search", timeout=10000)
+            except Exception:
+                logger.warning("ARK: Google search results didn't load")
+                return None
+
+            # Find first link with /products/sku/
+            links = await page.query_selector_all("a[href*='/products/sku/']")
+            for link in links:
+                href = await link.get_attribute("href") or ""
+                if not href:
+                    continue
+
+                # Strip Google redirect wrapper (/url?q=...&sa=...)
+                if "/url?q=" in href:
+                    parsed = urllib.parse.urlparse(href)
+                    params = urllib.parse.parse_qs(parsed.query)
+                    if "q" in params:
+                        href = params["q"][0]
+
+                if "/products/sku/" in href:
+                    # Ensure it points to specifications page
+                    if "/specifications" not in href:
+                        base = href.rsplit("/", 1)[0]
+                        href = f"{base}/specifications.html"
+                    logger.info("ARK: Google found product URL: %s", href)
+                    return href
+
+            logger.info("ARK: no /products/sku/ links in Google results")
+            return None
+
+        except Exception as exc:
+            logger.warning("ARK: Google search failed: %s", exc)
+            return None
+
     async def _try_ark_direct_search(self, page, search_term: str) -> str | None:
         """Search ARK directly for a product (preferred for NICs/SSDs)."""
         encoded = search_term.replace(" ", "+")
@@ -322,13 +394,7 @@ class IntelARKChecker(BaseChecker):
         title = await page.title()
         logger.info("ARK: search page loaded, title='%s', URL=%s", title, page.url)
 
-        spec_url = await self._find_product_link(page, search_term)
-
-        if not spec_url:
-            logger.warning("ARK: no product links in Intel search, trying ARK search page")
-            spec_url = await self._try_ark_search(page, search_term)
-
-        return spec_url
+        return await self._find_product_link(page, search_term)
 
     async def _find_product_link(self, page, search_term: str) -> str | None:
         """Find the best-matching product specifications URL from search results."""
@@ -374,14 +440,21 @@ class IntelARKChecker(BaseChecker):
 
         # Score candidates by relevance to search term
         core = _extract_core_model(search_term)
-        core_lower = core.lower()
+        core_lower = core.lower().replace("®", "").replace("™", "")
         family = core.split("-")[0].lower() if "-" in core else ""
+        # Bare model: strip Xeon/Processor wrappers for word-order-independent matching
+        bare_model = re.sub(
+            r"\b(?:xeon|processor|intel)\b", "", core_lower, flags=re.IGNORECASE,
+        ).strip()
+        bare_model = re.sub(r"\s+", " ", bare_model)
         term_words = {w.lower() for w in search_term.split() if len(w) > 2}
 
         scored: list[tuple[int, str, str]] = []
         for href, text in candidates:
-            text_lower = text.lower()
+            text_lower = text.lower().replace("®", "").replace("™", "")
             if core_lower in text_lower:
+                score = 100
+            elif bare_model and bare_model in text_lower:
                 score = 100
             elif family and family in text_lower:
                 score = 50
@@ -552,16 +625,33 @@ def _prepare_search_term(model_key: str, category: str = "cpu") -> str:
     # CPU: strip residual XEON/INTEL prefix
     s = re.sub(r"^(?:INTEL\s+)?(?:XEON\s+)?", "", s, flags=re.IGNORECASE).strip()
 
-    # Scalable Xeons: "6132 GOLD" -> "Xeon Gold 6132"
-    scalable = re.match(r"^(\d{4,5})\s+(GOLD|SILVER|BRONZE|PLATINUM)$", s, re.IGNORECASE)
-    if scalable:
-        return f"Xeon {scalable.group(2).capitalize()} {scalable.group(1)}"
+    # Scalable Xeons: "SILVER 4310", "GOLD 5412U", "PLATINUM 8380"
+    scalable_wf = re.match(
+        r"^(SILVER|GOLD|PLATINUM|BRONZE)\s*(\d{4,5}[A-Z]*)$", s, re.IGNORECASE
+    )
+    if scalable_wf:
+        tier = scalable_wf.group(1).title()
+        num = scalable_wf.group(2)
+        return f"Intel Xeon {tier} {num} Processor"
+    # Also handle number-first: "6132 GOLD"
+    scalable_nf = re.match(
+        r"^(\d{4,5}[A-Z]*)\s+(GOLD|SILVER|BRONZE|PLATINUM)$", s, re.IGNORECASE
+    )
+    if scalable_nf:
+        num = scalable_nf.group(1)
+        tier = scalable_nf.group(2).title()
+        return f"Intel Xeon {tier} {num} Processor"
 
-    # E-2xxx series: "E-2136" -> "Xeon E-2136"
-    if re.match(r"^E-2\d{3}", s, re.IGNORECASE):
-        return f"Xeon {s}"
+    # E-2xxx series: "E-2136" -> "Intel Xeon E-2136 Processor"
+    if re.match(r"^E-2\d{3}[A-Z]*$", s, re.IGNORECASE):
+        return f"Intel Xeon {s} Processor"
 
-    # Add space before version suffix: "E5-2683V4" -> "E5-2683 v4"
+    # E3/E5/E7 series: "E5-2683V4" -> "Intel Xeon E5-2683 v4 Processor"
+    if re.match(r"^E[357]-\d{4}[A-Z]*\d*$", s, re.IGNORECASE):
+        normalized = re.sub(r"V(\d+)$", r" v\1", s, flags=re.IGNORECASE)
+        return f"Intel Xeon {normalized} Processor"
+
+    # Add space before version suffix for other models
     s = re.sub(r"([A-Za-z0-9-])V(\d+)$", r"\1 v\2", s, flags=re.IGNORECASE)
 
     return s

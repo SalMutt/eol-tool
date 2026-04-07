@@ -160,7 +160,7 @@ JNP-QSFP-4X10GE-SR,Supermicro,active,manual_override,none,,,,misclassified-this-
 OPTICS:JNP-QSFP-4X10GE-LR,Supermicro,active,manual_override,none,,,,misclassified-this-is-juniper-optic
 S8016AGM2NR,Supermicro,active,manual_override,none,,,,misclassified-this-is-ASRock-Rack-board
 128GB TOS THNSNH128GBST,Supermicro,eol,product_discontinued,procurement,,,,misclassified-this-is-toshiba-SSD
-500GB TRAN SSD225S,Transcend,active,manual_override,none,,,,Transcend-SSD225S-current-consumer-SATA
+TRAN SSD225S,Transcend,active,manual_override,none,,,,Transcend-SSD225S-current-consumer-SATA
 ZT-P10810B-10P,Zotac,eol,product_discontinued,procurement,,,,Zotac-GTX1080Ti-Pascal-GPU-discontinued
 ARX414 (128GB KIT),A-Tech,active,none,none,,,,ddr4-rdimm-third-party-memory-current-generation
 SU650 SATA3 2.5,ADATA,active,none,none,,,,adata-su650-sata-ssd-current-product
@@ -177,5 +177,5 @@ CT16G4RFD824A,Micron,active,none,informational,,,,micron-crucial-ddr4-2400-rdimm
 OPTIMA,PNY,eol,product_discontinued,procurement,,,,pny-optima-sata-ssd-discontinued-budget-line
 883 DCT,Samsung,eol,product_discontinued,procurement,,,,samsung-883-dct-datacenter-sata-ssd-replaced-by-893-897-series
 HALF-SLIM SSD,SanDisk,eol,product_discontinued,procurement,,,,sandisk-half-slim-form-factor-legacy-blade-server-storage
-SSD225S,Transcend,active,none,none,,,,transcend-ssd225s-sata-ssd-current-product
+TRAN SSD225S,Transcend,active,none,none,,,,transcend-ssd225s-sata-ssd-current-product
 GREEN SATA3 2.5,WD,active,none,none,,,,wd-green-sata-ssd-current-product-line

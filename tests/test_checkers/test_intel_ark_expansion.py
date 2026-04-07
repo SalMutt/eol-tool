@@ -249,7 +249,7 @@ class TestArkDirectSearchRouting:
             mock_ark.assert_awaited_once()
             mock_intel.assert_not_awaited()
 
-    async def test_cpu_uses_intel_search_not_ark_direct(self):
+    async def test_cpu_tries_google_first_then_falls_through(self):
         checker = IntelARKChecker()
         checker._browser = MagicMock()
 
@@ -257,16 +257,21 @@ class TestArkDirectSearchRouting:
         checker._browser.new_page = AsyncMock(return_value=page)
 
         with patch.object(
+            checker, "_try_google_search", new_callable=AsyncMock
+        ) as mock_google, patch.object(
             checker, "_try_ark_direct_search", new_callable=AsyncMock
         ) as mock_ark, patch.object(
             checker, "_try_intel_search", new_callable=AsyncMock
         ) as mock_intel:
+            mock_google.return_value = None
+            mock_ark.return_value = None
             mock_intel.return_value = "https://intel.com/products/sku/55555"
             page.inner_text = AsyncMock(return_value="Marketing Status Launched")
 
             await checker._playwright_lookup("E5-2683 v4", "cpu")
 
-            mock_ark.assert_not_awaited()
+            mock_google.assert_awaited_once()
+            mock_ark.assert_awaited_once()
             mock_intel.assert_awaited_once()
 
     async def test_nic_falls_back_to_intel_search_when_ark_direct_fails(self):
