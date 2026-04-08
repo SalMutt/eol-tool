@@ -38,7 +38,7 @@
 - 99.9% classification rate (1 legitimate unknown: Dell M.2 with no model number)
 - 84 Intel models with manufacturer-confirmed dates (up from 65 in v2.1.0)
 - 115+ verified EOL dates total (81 manufacturer-confirmed, 34 community database)
-- 1,157+ tests passing, ruff clean
+- 1,175 tests passing, ruff clean
 
 ## v2.0.0 (2025-03-30)
 
