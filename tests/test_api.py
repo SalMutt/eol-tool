@@ -5,6 +5,7 @@ import io
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from eol_tool import __version__
 from eol_tool.api import app
 
 _BASE = "http://test"
@@ -28,7 +29,7 @@ class TestHealth:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
-        assert data["version"] == "2.0.0"
+        assert data["version"] == __version__
 
 
 class TestLookup:
