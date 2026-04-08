@@ -1,1 +1,1 @@
-{"timestamp": "2026-04-08T13:23:10.621537", "results": [{"model": "X520-DA2", "manufacturer": "Intel", "status": "active", "eol_date": null, "risk_category": "none", "source": "test"}, {"model": "EX4300", "manufacturer": "Juniper", "status": "active", "eol_date": null, "risk_category": "none", "source": "test"}]}
+{"timestamp": "2026-04-08T15:53:41.625621", "results": [{"model": "EX4300-48T", "manufacturer": "Juniper", "status": "eol", "eol_date": "2023-03-31", "risk_category": "security", "source": "juniper-eol"}]}

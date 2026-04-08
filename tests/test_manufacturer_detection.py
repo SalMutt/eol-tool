@@ -1,6 +1,6 @@
 """Tests for manufacturer auto-detection from model names."""
 
-from eol_tool.reader import _detect_manufacturer
+from eol_tool.reader import _detect_category_from_prefix, _detect_manufacturer
 
 
 class TestJuniperDetection:
@@ -87,7 +87,7 @@ class TestSeagateDetection:
         assert _detect_manufacturer("ST16000NM001G", "hdd") == "Seagate"
 
     def test_hgst_legacy(self):
-        assert _detect_manufacturer("HGST HUS726T4TALA6L4", "hdd") == "Seagate"
+        assert _detect_manufacturer("HGST HUS726T4TALA6L4", "hdd") == "Hitachi"
 
 
 class TestWDDetection:
@@ -236,3 +236,141 @@ class TestEdgeCases:
         assert _detect_manufacturer("ex4300-48t", "switch") == "Juniper"
         assert _detect_manufacturer("ssdpe2kx040t8", "ssd") == "Intel"
         assert _detect_manufacturer("epyc 7413", "cpu") == "AMD"
+
+
+class TestPrefixedStringDetection:
+    """Manufacturer detection from strings with CATEGORY:CONDITION:CAPACITY prefixes."""
+
+    def test_detect_from_prefixed_string(self):
+        result = _detect_manufacturer("HARD DRIVES:USED:10TB SEAGATE ENT - 0016", "drive")
+        assert result == "Seagate"
+
+    def test_detect_intel_abbreviated(self):
+        assert _detect_manufacturer("SSD DRIVES:NEW:480GB INT D3-S4510", "ssd") == "Intel"
+
+    def test_detect_toshiba_abbreviated(self):
+        assert _detect_manufacturer("HARD DRIVES:USED:12TB TOS MG07ACA12TE", "drive") == "Toshiba"
+
+    def test_detect_kingston_from_prefix(self):
+        assert _detect_manufacturer("MEMORY:USED:32GB KTD-PE424/32G", "memory") == "Kingston"
+
+    def test_detect_amd_from_prefix(self):
+        assert _detect_manufacturer("PROCESSORS:USED:AMD EPYC 7413", "cpu") == "AMD"
+
+    def test_detect_broadcom_from_prefix(self):
+        assert _detect_manufacturer("NETWORK CARDS:NEW:Broadcom 57416", "nic") == "Broadcom"
+
+    def test_detect_wd_slash(self):
+        assert _detect_manufacturer("HARD DRIVES:USED:2TB WD/NAS WD20EFZX", "drive") == "WD"
+
+
+class TestBrandSubstringDetection:
+    """Brand name substring matching anywhere in the model string."""
+
+    def test_seagate_brand_name(self):
+        assert _detect_manufacturer("SEAGATE ENT - 0016", "drive") == "Seagate"
+
+    def test_samsung_brand_name(self):
+        assert _detect_manufacturer("SAMSUNG 870 EVO", "ssd") == "Samsung"
+
+    def test_kingston_brand_name(self):
+        assert _detect_manufacturer("KINGSTON A400", "ssd") == "Kingston"
+
+    def test_broadcom_brand_name(self):
+        assert _detect_manufacturer("Broadcom 57416", "nic") == "Broadcom"
+
+    def test_brocade_brand_name(self):
+        assert _detect_manufacturer("BROCADE 300", "switch") == "Brocade"
+
+    def test_mellanox_brand_name(self):
+        assert _detect_manufacturer("MELLANOX CX5", "nic") == "Mellanox"
+
+    def test_corsair_brand_name(self):
+        assert _detect_manufacturer("CORSAIR VENGEANCE 32GB", "memory") == "Corsair"
+
+    def test_sk_hynix_brand_name(self):
+        assert _detect_manufacturer("SK HYNIX PC711", "ssd") == "SK Hynix"
+
+    def test_hynix_without_sk(self):
+        assert _detect_manufacturer("HYNIX HMA84GR7CJR4N", "memory") == "SK Hynix"
+
+    def test_sandisk_brand_name(self):
+        assert _detect_manufacturer("SANDISK ULTRA 3D", "ssd") == "SanDisk"
+
+    def test_asrock_brand_name(self):
+        assert _detect_manufacturer("ASROCK X570D4U", "server-board") == "AsRock"
+
+    def test_toshiba_brand_name(self):
+        assert _detect_manufacturer("TOSHIBA MG07ACA12TE", "drive") == "Toshiba"
+
+    def test_amd_prefix(self):
+        assert _detect_manufacturer("AMD EPYC 7413", "cpu") == "AMD"
+
+    def test_intel_prefix(self):
+        assert _detect_manufacturer("INTEL XEON GOLD 6248", "cpu") == "Intel"
+
+    def test_int_abbreviated_not_internal(self):
+        """INT at start → Intel, but not INTERNAL."""
+        assert _detect_manufacturer("INT D3-S4510", "ssd") == "Intel"
+        assert _detect_manufacturer("INT RAID Expander", "raid") == "Intel"
+
+    def test_tos_abbreviated(self):
+        assert _detect_manufacturer("TOS MG07ACA12TE", "drive") == "Toshiba"
+
+
+class TestCategoryFromPrefix:
+    """Category detection from CATEGORY:CONDITION: prefix in raw model strings."""
+
+    def test_category_drive(self):
+        assert _detect_category_from_prefix("HARD DRIVES:USED:10TB foo") == "drive"
+
+    def test_category_ssd(self):
+        assert _detect_category_from_prefix("SSD DRIVES:NEW:480GB foo") == "ssd"
+
+    def test_category_memory(self):
+        assert _detect_category_from_prefix("MEMORY:USED:32GB foo") == "memory"
+
+    def test_category_cpu(self):
+        assert _detect_category_from_prefix("PROCESSORS:USED:AMD EPYC 7413") == "cpu"
+
+    def test_category_nic(self):
+        assert _detect_category_from_prefix("NETWORK CARDS:NEW:Broadcom 57416") == "nic"
+
+    def test_category_switch(self):
+        assert _detect_category_from_prefix("SWITCHES:USED:EX4300-48T") == "switch"
+
+    def test_category_firewall(self):
+        assert _detect_category_from_prefix("FIREWALLS:NEW:SRX345") == "firewall"
+
+    def test_category_optic(self):
+        assert _detect_category_from_prefix("OPTICS:NEW:SFP-10G-SR") == "optic"
+
+    def test_category_gpu(self):
+        assert _detect_category_from_prefix("GPU:NEW:RTX A6000") == "gpu"
+
+    def test_category_server_board(self):
+        assert _detect_category_from_prefix("MAINBOARD:USED:ASROCK X570D4U") == "server-board"
+
+    def test_category_motherboard(self):
+        assert _detect_category_from_prefix("MOTHERBOARD:NEW:X11SPH") == "server-board"
+
+    def test_category_chassis(self):
+        assert _detect_category_from_prefix("CHASSIS:USED:CSE-113AC2") == "chassis"
+
+    def test_category_raid(self):
+        assert _detect_category_from_prefix("RAID CARDS:NEW:INT RAID Expander") == "raid"
+
+    def test_category_raid_short(self):
+        assert _detect_category_from_prefix("RAID:NEW:MegaRAID 9460") == "raid"
+
+    def test_category_cooling(self):
+        assert _detect_category_from_prefix("HEAT SINKS:USED:SNK-P0068APS4") == "cooling"
+
+    def test_category_cooling_alt(self):
+        assert _detect_category_from_prefix("COOLING:NEW:FAN-0154L4") == "cooling"
+
+    def test_no_prefix_returns_none(self):
+        assert _detect_category_from_prefix("EX4300-48T") is None
+
+    def test_empty_string_returns_none(self):
+        assert _detect_category_from_prefix("") is None

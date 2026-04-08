@@ -85,23 +85,28 @@ _DATE_SOURCE_LABELS = {
 
 _MANUFACTURER_RULES: list[tuple[re.Pattern[str], str]] = [
     # Juniper networking
-    (re.compile(r"^(?:EX|QFX|SRX|MX)\d", re.IGNORECASE), "Juniper"),
-    (re.compile(r"^(?:CHAS-|JPSU-|FFANTRAY-|RE-|MPC|MIC-|PF-)", re.IGNORECASE), "Juniper"),
+    (re.compile(r"^(?:EX|QFX|SRX|MX)[-\d]", re.IGNORECASE), "Juniper"),
+    (re.compile(
+        r"^(?:CHAS-|JPSU-|FFANTRAY-|RE-|MPC|MIC[-\d]|PF-|JNP-|PWR-MX|SCBE)",
+        re.IGNORECASE,
+    ), "Juniper"),
     # Supermicro
     (re.compile(
-        r"^(?:CSE-|X(?:9|1[0-3])|H1[23]|AOC-|RSC-|BPN-|SNK-|PIO-)", re.IGNORECASE,
+        r"^(?:CSE-|X(?:9|1[0-3])|H1[2-4]|AOC-|RSC-|BPN-|SNK-|PIO-|MBD|SYS-)",
+        re.IGNORECASE,
     ), "Supermicro"),
-    # Seagate (ST prefix + digits; HGST legacy)
+    # Seagate (ST prefix + digits)
     (re.compile(r"^ST\d{3,}[A-Z]", re.IGNORECASE), "Seagate"),
-    (re.compile(r"^HGST", re.IGNORECASE), "Seagate"),
-    # WD
-    (re.compile(r"^(?:WD\d|WUS|WUSTR)", re.IGNORECASE), "WD"),
+    # HGST (Hitachi)
+    (re.compile(r"\bHGST\b", re.IGNORECASE), "Hitachi"),
+    # WD (including WD/ slash variant)
+    (re.compile(r"^(?:WD[\d/ ]|WUS|WUSTR)", re.IGNORECASE), "WD"),
     # Kingston memory
     (re.compile(r"^(?:KTD-|KVR|KSM|KTL-|K\dA)", re.IGNORECASE), "Kingston"),
-    # Micron
-    (re.compile(r"^(?:MTA|MEM-DR)", re.IGNORECASE), "Micron"),
-    # Samsung
-    (re.compile(r"^(?:MZ-|PM\d|SM\d)", re.IGNORECASE), "Samsung"),
+    # Micron (including MT memory part numbers)
+    (re.compile(r"^(?:MTA|MEM-DR|MT\d)", re.IGNORECASE), "Micron"),
+    # Samsung (including M3xx server memory)
+    (re.compile(r"^(?:MZ-|PM\d|SM\d|M3[289]\d)", re.IGNORECASE), "Samsung"),
     # Intel SSDs
     (re.compile(r"^(?:SSDPE|SSDSC|DC\s*P\d|D3-S\d)", re.IGNORECASE), "Intel"),
     # Intel NICs
@@ -109,8 +114,11 @@ _MANUFACTURER_RULES: list[tuple[re.Pattern[str], str]] = [
     # Dell
     (re.compile(r"^POWEREDGE", re.IGNORECASE), "Dell"),
     (re.compile(r"^R\d{3}[a-z]*$", re.IGNORECASE), "Dell"),
-    # Broadcom
+    # Crucial memory/SSDs (CT part numbers)
+    (re.compile(r"^CT\d", re.IGNORECASE), "Crucial"),
+    # Broadcom (including MegaRAID numeric part numbers)
     (re.compile(r"^(?:BCM|N2)", re.IGNORECASE), "Broadcom"),
+    (re.compile(r"^\d{4}-\d+I\b", re.IGNORECASE), "Broadcom"),
     # AMD
     (re.compile(r"^(?:EPYC|RYZEN|RADEON)\b", re.IGNORECASE), "AMD"),
     (re.compile(r"^MI\d{2,3}", re.IGNORECASE), "AMD"),
@@ -119,6 +127,67 @@ _MANUFACTURER_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^RTX", re.IGNORECASE), "NVIDIA"),
     (re.compile(r"^T\d{3,4}$", re.IGNORECASE), "NVIDIA"),
     (re.compile(r"^A\d{3,4}$", re.IGNORECASE), "NVIDIA"),
+    # Solidigm SSDs (D5-P series, formerly Intel)
+    (re.compile(r"^D5-P\d", re.IGNORECASE), "Solidigm"),
+    # Intel Xeon E-series (E3-1230, E5-2699, E-2136, etc.)
+    (re.compile(r"^E[3-7]-\d{4}", re.IGNORECASE), "Intel"),
+    (re.compile(r"^E-\d{4}", re.IGNORECASE), "Intel"),
+    # Intel Xeon number-first format (4110 SILVER XEON, 6146 GOLD)
+    (re.compile(
+        r"^\d{4}\w?\s+(?:SILVER|GOLD|BRONZE|PLATINUM)", re.IGNORECASE,
+    ), "Intel"),
+    # Brocade switches
+    (re.compile(r"^(?:ACS|FLS|FCX|FI-)\d", re.IGNORECASE), "Brocade"),
+    # Transcend (TS part numbers)
+    (re.compile(r"^TS\d+[A-Z]", re.IGNORECASE), "Transcend"),
+    # SK Hynix memory (HMA, HMT, HMAA, etc.)
+    (re.compile(r"^HM[A-Z]", re.IGNORECASE), "SK Hynix"),
+    # ── Brand name substring matches ──────────────────────────────────
+    (re.compile(r"\bSEAGATE\b", re.IGNORECASE), "Seagate"),
+    (re.compile(r"\bSAMSUNG\b", re.IGNORECASE), "Samsung"),
+    (re.compile(r"\bKINGSTON\b", re.IGNORECASE), "Kingston"),
+    (re.compile(r"\bBROADCOM\b", re.IGNORECASE), "Broadcom"),
+    (re.compile(r"\bBROCADE\b", re.IGNORECASE), "Brocade"),
+    (re.compile(r"\bMELLANOX\b", re.IGNORECASE), "Mellanox"),
+    (re.compile(r"\bCORSAIR\b", re.IGNORECASE), "Corsair"),
+    (re.compile(r"\b(?:SK\s+)?HYNIX\b", re.IGNORECASE), "SK Hynix"),
+    (re.compile(r"\bSANDISK\b", re.IGNORECASE), "SanDisk"),
+    (re.compile(r"\bASROCK\b", re.IGNORECASE), "AsRock"),
+    (re.compile(r"\bTOSHIBA\b", re.IGNORECASE), "Toshiba"),
+    (re.compile(r"\bKIOXIA\b", re.IGNORECASE), "Kioxia"),
+    (re.compile(r"\bGIGABYTE\b", re.IGNORECASE), "Gigabyte"),
+    (re.compile(r"\bCRUCIAL\b", re.IGNORECASE), "Crucial"),
+    (re.compile(r"\bSOLIDIGM\b", re.IGNORECASE), "Solidigm"),
+    (re.compile(r"\bDELL\b", re.IGNORECASE), "Dell"),
+    (re.compile(r"\bIBM\b", re.IGNORECASE), "IBM"),
+    (re.compile(r"\bASUS\b", re.IGNORECASE), "ASUS"),
+    (re.compile(r"\bJUNIPER\b", re.IGNORECASE), "Juniper"),
+    (re.compile(r"\bHITACHI\b", re.IGNORECASE), "Hitachi"),
+    (re.compile(r"\bPNY\b", re.IGNORECASE), "PNY"),
+    (re.compile(r"\bEVGA\b", re.IGNORECASE), "EVGA"),
+    (re.compile(r"\bOCZ\b", re.IGNORECASE), "OCZ"),
+    (re.compile(r"\bARISTA\b", re.IGNORECASE), "Arista"),
+    (re.compile(r"\bADATA\b", re.IGNORECASE), "ADATA"),
+    (re.compile(r"\bADAPTEC\b", re.IGNORECASE), "Adaptec"),
+    (re.compile(r"\bTURBOIRON\b", re.IGNORECASE), "Brocade"),
+    (re.compile(r"\bSERVERIRON\b", re.IGNORECASE), "Brocade"),
+    # ── Brand prefix matches ──────────────────────────────────────────
+    (re.compile(r"^AMD\b", re.IGNORECASE), "AMD"),
+    (re.compile(r"^INTEL\b", re.IGNORECASE), "Intel"),
+    # ── Abbreviated brand prefixes ────────────────────────────────────
+    (re.compile(r"^INT\b(?!ERN)", re.IGNORECASE), "Intel"),
+    (re.compile(r"^TOS\b", re.IGNORECASE), "Toshiba"),
+    (re.compile(r"^SAM\b", re.IGNORECASE), "Samsung"),
+    (re.compile(r"^KNG\b", re.IGNORECASE), "Kingston"),
+    (re.compile(r"^LSI\b", re.IGNORECASE), "Broadcom"),
+    (re.compile(r"^MIC\b", re.IGNORECASE), "Micron"),
+    (re.compile(r"^CRU\b", re.IGNORECASE), "Crucial"),
+    (re.compile(r"^CP\d", re.IGNORECASE), "Corsair"),
+    (re.compile(r"^MUS\b", re.IGNORECASE), "Mushkin"),
+    (re.compile(r"^TRAN\b", re.IGNORECASE), "Transcend"),
+    (re.compile(r"^ASU\b", re.IGNORECASE), "ASUS"),
+    (re.compile(r"^SM\s", re.IGNORECASE), "Supermicro"),
+    (re.compile(r"^SMC\b", re.IGNORECASE), "Supermicro"),
 ]
 
 # Category-specific rules (checked first for higher specificity)
@@ -129,20 +198,66 @@ _CATEGORY_MANUFACTURER_RULES: list[tuple[str, re.Pattern[str], str]] = [
 ]
 
 
+# Regexes for stripping category/condition/capacity prefixes in detection
+_DETECTION_PREFIX_RE = re.compile(
+    r"^[A-Z][A-Z /]+:(NEW|USED|REFURBISHED):", re.IGNORECASE,
+)
+_DETECTION_CAPACITY_RE = re.compile(
+    r"^\d+(?:\.\d+)?(?:TB?|GB|MB)\s+", re.IGNORECASE,
+)
+
+# Map category prefix strings to normalized category values
+_CATEGORY_PREFIX_MAP: dict[str, str] = {
+    "HARD DRIVES": "drive",
+    "SSD DRIVES": "ssd",
+    "MEMORY": "memory",
+    "PROCESSORS": "cpu",
+    "NETWORK CARDS": "nic",
+    "NETWORK DEVICES": "nic",
+    "SWITCHES": "switch",
+    "FIREWALLS": "firewall",
+    "OPTICS": "optic",
+    "GPU": "gpu",
+    "MAINBOARD": "server-board",
+    "MOTHERBOARD": "server-board",
+    "CHASSIS": "chassis",
+    "RAID CARDS": "raid",
+    "RAID": "raid",
+    "HEAT SINKS": "cooling",
+    "COOLING": "cooling",
+}
+
+
+def _detect_category_from_prefix(raw_model: str) -> str | None:
+    """Extract category from a CATEGORY:CONDITION: prefix in the raw model string."""
+    idx = raw_model.find(":")
+    if idx <= 0:
+        return None
+    prefix = raw_model[:idx].strip().upper()
+    return _CATEGORY_PREFIX_MAP.get(prefix)
+
+
 def _detect_manufacturer(model: str, category: str) -> str | None:
     """Attempt to detect manufacturer from model name and category.
 
     Returns the manufacturer name if a match is found, None otherwise.
+    Strips category/condition/capacity prefixes before matching.
     """
+    # Strip category:condition: and capacity prefixes for robust matching
+    stripped = _DETECTION_PREFIX_RE.sub("", model).strip()
+    stripped = _DETECTION_CAPACITY_RE.sub("", stripped).strip()
+    if not stripped:
+        return None
+
     # Check category-specific rules first (higher specificity)
     cat_lower = category.lower()
     for rule_cat, pattern, mfr in _CATEGORY_MANUFACTURER_RULES:
-        if cat_lower == rule_cat and pattern.search(model):
+        if cat_lower == rule_cat and pattern.search(stripped):
             return mfr
 
     # Check general rules
     for pattern, mfr in _MANUFACTURER_RULES:
-        if pattern.search(model):
+        if pattern.search(stripped):
             return mfr
 
     return None
@@ -175,7 +290,7 @@ def read_models(path: Path, show_warnings: bool = False) -> list[HardwareModel]:
 
         category = str(values.get("category") or "").strip()
         if not category:
-            category = "unknown"
+            category = _detect_category_from_prefix(model_str) or "unknown"
 
         models.append(
             HardwareModel(

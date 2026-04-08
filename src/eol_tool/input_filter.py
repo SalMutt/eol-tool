@@ -7,6 +7,45 @@ from .models import HardwareModel
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Whitelists — if a model string matches any of these, it is NEVER filtered.
+# These are checked before junk patterns to avoid false positives.
+# ---------------------------------------------------------------------------
+
+# Manufacturer names that can appear in the model string itself.
+_MANUFACTURER_WHITELIST = re.compile(
+    r"\b(?:"
+    r"WD|WESTERN\s*DIGITAL|SEAGATE|TOSHIBA|TOS|HITACHI|HGST"
+    r"|SANDISK|JUNIPER|EVGA|PNY|NVIDIA|GEFORCE|RADEON|AMD|INTEL"
+    r"|SAMSUNG|KINGSTON|MICRON|CRUCIAL|BROADCOM|BROCADE|MELLANOX"
+    r"|CORSAIR|SK\s*HYNIX|KIOXIA|ADATA|MUSHKIN|OCZ|SOLIDIGM|TRANSCEND"
+    r"|DELL|HPE|SUPERMICRO|CISCO|ARISTA|ASROCK|ASUS|GIGABYTE|MSI|ZOTAC"
+    r"|ADAPTEC|AXIOM|CHENBRO|DYNATRON|IBM"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Model number patterns for known hardware families.
+_MODEL_NUMBER_WHITELIST = re.compile(
+    r"(?:"
+    r"\bWD[A-Z0-9]{4,}\b"           # WD drives (WD102KFBX, WD2005FBYZ)
+    r"|\bMG\d{2}[A-Z]+"             # Toshiba MG series (MG06ACA10TE)
+    r"|\bST\d{3,}"                  # Seagate drives (ST8000NM000A)
+    r"|\b\dF\d+"                    # Hitachi model numbers (0F12470)
+    r"|\bSRX\d+"                    # Juniper firewalls (SRX300, SRX340)
+    r"|\bEX\d+"                     # Juniper switches (EX4300)
+    r"|\bQFX\d+"                    # Juniper switches (QFX5100)
+    r"|\bMX\d+"                     # Juniper routers (MX204)
+    r"|\bCSE-[A-Z0-9]+"            # Supermicro chassis (CSE-826)
+    r"|\bX\d{1,2}[A-Z]+"           # Supermicro boards (X11DPH)
+    r"|\bEPYC\b|\bRYZEN\b|\bTHREADRIPPER\b"  # AMD CPUs
+    r"|\bGEFORCE\b|\bRTX\b|\bGTX\b|\bQUADRO\b"  # GPUs
+    r"|\bP\d{4}\b|\bT\d{3,4}\b|\bA\d{3,4}\b"    # NVIDIA pro GPUs
+    r"|\bVCQRTX[A-Z0-9]+|\bVCQ[A-Z]+"            # PNY/NVIDIA Quadro
+    r")",
+    re.IGNORECASE,
+)
+
 # Optics keywords — items containing these are real hardware
 _OPTIC_RE = re.compile(r"\bQ?SFPP?\b|\bQ?SFP\d|SFP\+|\bXFP\b|\bCFP\b")
 
@@ -37,13 +76,14 @@ _JUNK_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"^\d+CH\s+\d+-\d+$"), "short cryptic code"),
 ]
 
-# Hardware part-number pattern: letter prefix + dash + segment containing a letter
-_PART_NUMBER_RE = re.compile(r"^[A-Z]{2,}\d*-[A-Z0-9]*[A-Z][A-Z0-9]*")
 
-# Drive model number: starts with digit(s) immediately followed by letter(s), min 5 chars
-_DRIVE_MODEL_RE = re.compile(r"^\d+[A-Z]")
-
-_MIN_DRIVE_MODEL_LEN = 5
+def _matches_whitelist(upper: str) -> bool:
+    """Return True if the model string matches a known manufacturer or model pattern."""
+    if _MANUFACTURER_WHITELIST.search(upper):
+        return True
+    if _MODEL_NUMBER_WHITELIST.search(upper):
+        return True
+    return False
 
 
 def is_junk_row(model: str, manufacturer: str) -> bool:
@@ -59,23 +99,23 @@ def is_junk_row(model: str, manufacturer: str) -> bool:
     if not upper:
         return True
 
+    # Whitelists — if the model contains a known manufacturer name or
+    # model-number pattern, keep it regardless of junk-pattern matches.
+    if _matches_whitelist(upper):
+        return False
+
     # Optics are always real hardware
     if _OPTIC_RE.search(upper):
         return False
 
-    # Explicit junk patterns (checked before generic hardware patterns)
+    # Explicit junk patterns — only these cause filtering
     for pattern, _ in _JUNK_PATTERNS:
         if pattern.search(upper):
             return True
 
-    # Known hardware patterns — kept even without manufacturer
-    if _PART_NUMBER_RE.match(upper):
-        return False
-    if _DRIVE_MODEL_RE.match(upper) and len(upper) >= _MIN_DRIVE_MODEL_LEN:
-        return False
-
-    # No manufacturer and no recognized hardware pattern
-    return True
+    # Default: keep the row.  The junk patterns above catch genuinely
+    # non-hardware rows; everything else is assumed to be real hardware.
+    return False
 
 
 def _get_reason(model: str) -> str:

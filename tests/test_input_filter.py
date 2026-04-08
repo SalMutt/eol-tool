@@ -63,6 +63,15 @@ class TestJunkRows:
     def test_whitespace_model_no_manufacturer(self):
         assert is_junk_row("   ", "") is True
 
+    def test_real_junk_still_filtered(self):
+        assert is_junk_row("SERVER BAREBONE", "") is True
+
+    def test_real_junk_still_filtered_2(self):
+        assert is_junk_row("UK-4216", "") is True
+
+    def test_real_junk_still_filtered_3(self):
+        assert is_junk_row("RW SERVER UK", "") is True
+
 
 # ---------------------------------------------------------------------------
 # is_junk_row — kept rows (should NOT be filtered)
@@ -107,6 +116,31 @@ class TestKeptRows:
 
     def test_optics_sfp1g_no_manufacturer(self):
         assert is_junk_row("SFP1G-LX-31", "") is False
+
+    # Whitelist: manufacturer names in model string
+    def test_wd_drive_not_filtered(self):
+        assert is_junk_row("WD WD102KFBX", "") is False
+
+    def test_toshiba_drive_not_filtered(self):
+        assert is_junk_row("TOS MG07ACA12TE", "") is False
+
+    def test_seagate_not_filtered(self):
+        assert is_junk_row("SEAGATE ENT - 0016", "") is False
+
+    def test_hitachi_not_filtered(self):
+        assert is_junk_row("HITACHI 0F12470", "") is False
+
+    def test_juniper_firewall_not_filtered(self):
+        assert is_junk_row("JUNIPER SRX340 JB", "") is False
+
+    def test_gpu_not_filtered(self):
+        assert is_junk_row("EVGA GEFORCE 210", "") is False
+
+    def test_pny_gpu_not_filtered(self):
+        assert is_junk_row("PNY VCQRTX4000-PB", "") is False
+
+    def test_sandisk_not_filtered(self):
+        assert is_junk_row("SANDISK 128GB HALF-SLIM SSD", "") is False
 
 
 # ---------------------------------------------------------------------------
