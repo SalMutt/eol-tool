@@ -30,7 +30,7 @@ class TestNICs:
         assert r.status == EOLStatus.EOL
         assert r.risk_category == RiskCategory.PROCUREMENT
         assert r.confidence == 80
-        assert r.eol_reason == EOLReason.MANUFACTURER_DECLARED
+        assert r.eol_reason == EOLReason.PRODUCT_DISCONTINUED
 
     async def test_x540_t2_eol(self, checker):
         r = await checker.check(_hw("X540-T2"))

@@ -13,14 +13,14 @@ from ..models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategor
 _GENERATIONS = {
     (7, 1): {
         "status": EOLStatus.EOL,
-        "eol_reason": EOLReason.MANUFACTURER_DECLARED,
+        "eol_reason": EOLReason.TECHNOLOGY_GENERATION,
         "risk_category": RiskCategory.SUPPORT,
         "confidence": 85,
         "notes": "EPYC 7001 Naples - different socket SP3, no longer manufactured",
     },
     (7, 2): {
         "status": EOLStatus.EOL,
-        "eol_reason": EOLReason.MANUFACTURER_DECLARED,
+        "eol_reason": EOLReason.TECHNOLOGY_GENERATION,
         "risk_category": RiskCategory.INFORMATIONAL,
         "confidence": 85,
         "notes": "EPYC 7002 Rome - SP3 socket, superseded by Milan and Genoa",

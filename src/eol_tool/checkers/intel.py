@@ -167,7 +167,7 @@ class IntelChecker(BaseChecker):
             source_name="intel-static-lookup",
             confidence=80,
             notes=entry["notes"],
-            eol_reason=EOLReason.MANUFACTURER_DECLARED,
+            eol_reason=EOLReason.PRODUCT_DISCONTINUED,
             risk_category=entry["risk"],
             eol_date=eol_date,
             date_source="community_database" if eol_date else "none",

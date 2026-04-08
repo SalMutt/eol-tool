@@ -46,7 +46,7 @@ class TestNaples:
     async def test_epyc_7281(self, checker):
         r = await checker.check(_hw("EPYC 7281"))
         assert r.status == EOLStatus.EOL
-        assert r.eol_reason == EOLReason.MANUFACTURER_DECLARED
+        assert r.eol_reason == EOLReason.TECHNOLOGY_GENERATION
         assert r.risk_category == RiskCategory.SUPPORT
         assert r.confidence == 85
         assert "Naples" in r.notes
@@ -63,7 +63,7 @@ class TestNaples:
     async def test_epyc_7401p(self, checker):
         r = await checker.check(_hw("EPYC 7401P"))
         assert r.status == EOLStatus.EOL
-        assert r.eol_reason == EOLReason.MANUFACTURER_DECLARED
+        assert r.eol_reason == EOLReason.TECHNOLOGY_GENERATION
 
     async def test_epyc_7551p(self, checker):
         r = await checker.check(_hw("EPYC 7551P"))
@@ -88,7 +88,7 @@ class TestRome:
     async def test_epyc_7282(self, checker):
         r = await checker.check(_hw("AMD EPYC 7282"))
         assert r.status == EOLStatus.EOL
-        assert r.eol_reason == EOLReason.MANUFACTURER_DECLARED
+        assert r.eol_reason == EOLReason.TECHNOLOGY_GENERATION
         assert r.risk_category == RiskCategory.INFORMATIONAL
         assert r.confidence == 85
         assert "Rome" in r.notes

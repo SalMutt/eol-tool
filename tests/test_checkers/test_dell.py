@@ -61,7 +61,7 @@ class TestEOLServers:
     async def test_r730xd(self, checker):
         r = await checker.check(_hw("DELL POWEREDGE R730XD", category="chassis"))
         assert r.status == EOLStatus.EOL
-        assert r.eol_reason == EOLReason.MANUFACTURER_DECLARED
+        assert r.eol_reason == EOLReason.PRODUCT_DISCONTINUED
         assert r.risk_category == RiskCategory.SUPPORT
         assert r.confidence == 85
         assert "R730xd" in r.notes

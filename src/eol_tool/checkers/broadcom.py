@@ -123,7 +123,7 @@ class BroadcomChecker(BaseChecker):
             source_name="broadcom-static-lookup",
             confidence=85,
             notes=notes,
-            eol_reason=EOLReason.MANUFACTURER_DECLARED,
+            eol_reason=EOLReason.VENDOR_ACQUIRED,
             risk_category=RiskCategory.SUPPORT,
             date_source="none",
         )

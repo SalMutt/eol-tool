@@ -26,7 +26,7 @@ class TestSAS2EOL:
     async def test_9240_8i(self, checker):
         r = await checker.check(_hw("9240-8I"))
         assert r.status == EOLStatus.EOL
-        assert r.eol_reason == EOLReason.MANUFACTURER_DECLARED
+        assert r.eol_reason == EOLReason.VENDOR_ACQUIRED
         assert r.risk_category == RiskCategory.SUPPORT
         assert r.confidence == 85
 
