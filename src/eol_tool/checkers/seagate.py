@@ -1,8 +1,9 @@
-"""Seagate EOL checker using capacity-based classification rules.
+"""Seagate EOL checker using capacity and product-line classification rules.
 
 Seagate does not publish formal EOL pages.  Classification is based on
-drive capacity and product era — enterprise performance 10K/15K SAS drives
-and older Exos models are considered EOL.  No HTTP calls needed.
+drive capacity, product line, and model number patterns.  Enterprise
+performance 10K/15K SAS drives and older Exos models are considered EOL.
+No HTTP calls needed.
 """
 
 import re
@@ -20,6 +21,34 @@ _CAPACITY_RE = re.compile(
 _SEAGATE_PREFIX_RE = re.compile(
     r"^(?:SEAGATE\s+ENT(?:ERPRISE)?|SEAGATE)\s*[-–]?\s*",
     re.IGNORECASE,
+)
+
+# ── Product line patterns ────────────────────────────────────────────
+
+# Constellation: ST*NM* or ST*NX* models — discontinued product line
+_CONSTELLATION_RE = re.compile(r"\bST\d+N[MX]\d", re.IGNORECASE)
+
+# Exos current-gen models: ST*NM*1G or later suffix patterns (X16+)
+# Exos X16: ST16000NM001G, Exos X18: ST18000NM000J, X20: ST20000NM007D
+_EXOS_CURRENT_RE = re.compile(
+    r"\bST(?:16|18|20|22|24)\d{3}NM\d{3}[A-Z]", re.IGNORECASE,
+)
+
+# Nytro SSD models
+_NYTRO_RE = re.compile(r"\bNYTRO\b", re.IGNORECASE)
+# Nytro current generation: 3000/5000 series
+_NYTRO_CURRENT_RE = re.compile(r"\bNYTRO\s*(?:3[3-9]|[4-9]\d|5\d)", re.IGNORECASE)
+
+# HGST models: legacy (WD acquired HGST)
+_HGST_RE = re.compile(r"\bHGST\b|^HUS\d|^HUH\d|^HUSMM|^HGST", re.IGNORECASE)
+
+# Enterprise Performance 10K/15K SAS (legacy)
+_ENT_PERF_RE = re.compile(r"\b(?:10K|15K|10000|15000)\b", re.IGNORECASE)
+
+# Enterprise Capacity older models: ST*NM* without the current-gen suffix
+# These are pre-Exos Seagate enterprise drives
+_ENT_CAPACITY_OLD_RE = re.compile(
+    r"\bST(?:1|2|3|4|5|6|8)\d{3,4}NM\d{3}[0-9]", re.IGNORECASE,
 )
 
 
@@ -82,8 +111,86 @@ def _classify_by_capacity(
     )
 
 
+def _classify_by_product_line(
+    raw: str,
+) -> tuple[EOLStatus, RiskCategory, str, EOLReason, int] | None:
+    """Classify a Seagate/HGST model by product line patterns.
+
+    Returns (status, risk, notes, eol_reason, confidence) or None.
+    """
+    # HGST models: all legacy/EOL (WD acquired HGST)
+    if _HGST_RE.search(raw):
+        return (
+            EOLStatus.EOL,
+            RiskCategory.PROCUREMENT,
+            "HGST legacy model (acquired by WD) - EOL",
+            EOLReason.VENDOR_ACQUIRED,
+            70,
+        )
+
+    # Enterprise Performance 10K/15K SAS: all EOL
+    if _ENT_PERF_RE.search(raw):
+        return (
+            EOLStatus.EOL,
+            RiskCategory.PROCUREMENT,
+            "Seagate Enterprise Performance 10K/15K - EOL",
+            EOLReason.PRODUCT_DISCONTINUED,
+            70,
+        )
+
+    # Nytro SSDs
+    if _NYTRO_RE.search(raw):
+        if _NYTRO_CURRENT_RE.search(raw):
+            return (
+                EOLStatus.ACTIVE,
+                RiskCategory.NONE,
+                "Seagate Nytro current generation - active",
+                EOLReason.NONE,
+                60,
+            )
+        return (
+            EOLStatus.EOL,
+            RiskCategory.PROCUREMENT,
+            "Seagate Nytro previous generation - EOL",
+            EOLReason.PRODUCT_DISCONTINUED,
+            60,
+        )
+
+    # Exos current generation (16TB+, new suffix patterns)
+    if _EXOS_CURRENT_RE.search(raw):
+        return (
+            EOLStatus.ACTIVE,
+            RiskCategory.NONE,
+            "Seagate Exos current generation - active",
+            EOLReason.NONE,
+            65,
+        )
+
+    # Older Enterprise Capacity / pre-Exos Constellation models
+    if _ENT_CAPACITY_OLD_RE.search(raw):
+        return (
+            EOLStatus.EOL,
+            RiskCategory.PROCUREMENT,
+            "Seagate Enterprise Capacity older generation - EOL",
+            EOLReason.PRODUCT_DISCONTINUED,
+            65,
+        )
+
+    # Constellation models (ST*NM*, ST*NX*) not caught above
+    if _CONSTELLATION_RE.search(raw):
+        return (
+            EOLStatus.EOL,
+            RiskCategory.PROCUREMENT,
+            "Seagate Constellation (discontinued product line) - EOL",
+            EOLReason.PRODUCT_DISCONTINUED,
+            70,
+        )
+
+    return None
+
+
 class SeagateChecker(BaseChecker):
-    """Seagate EOL checker using capacity-based classification."""
+    """Seagate EOL checker using capacity and product-line classification."""
 
     manufacturer_name = "Seagate"
     rate_limit = 100
@@ -93,8 +200,9 @@ class SeagateChecker(BaseChecker):
     async def check(self, model: HardwareModel) -> EOLResult:
         # Capacity may be in original_item (before normalization strips it)
         raw = model.original_item or model.model
-        capacity_tb = _extract_capacity_tb(raw)
 
+        # Try capacity-based classification first (highest confidence)
+        capacity_tb = _extract_capacity_tb(raw)
         if capacity_tb is not None:
             status, risk, notes = _classify_by_capacity(capacity_tb)
             return EOLResult(
@@ -111,7 +219,23 @@ class SeagateChecker(BaseChecker):
                 date_source="none",
             )
 
-        # Cannot determine capacity — return UNKNOWN
+        # Try product-line classification
+        pl = _classify_by_product_line(raw)
+        if pl is not None:
+            status, risk, notes, eol_reason, confidence = pl
+            return EOLResult(
+                model=model,
+                status=status,
+                checked_at=datetime.now(),
+                source_name="seagate-product-line-rules",
+                confidence=confidence,
+                notes=notes,
+                eol_reason=eol_reason,
+                risk_category=risk,
+                date_source="none",
+            )
+
+        # Cannot classify — return UNKNOWN
         return EOLResult(
             model=model,
             status=EOLStatus.UNKNOWN,

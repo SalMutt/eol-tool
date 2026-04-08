@@ -87,6 +87,53 @@ class TestSSDNormalization:
         term = _prepare_search_term(key, "ssd")
         assert term == "Intel SSD 660P"
 
+    def test_ssd_normalize_strips_capacity(self):
+        key = _normalize_key("1.2TB S3510", "ssd")
+        assert key == "S3510"
+
+    def test_ssd_normalize_strips_capacity_gb(self):
+        key = _normalize_key("960GB D3-S4510", "ssd")
+        assert key == "D3-S4510"
+
+    def test_ssd_normalize_strips_form_factor_u2(self):
+        key = _normalize_key("P3600 U.2", "ssd")
+        assert key == "P3600"
+
+    def test_ssd_normalize_strips_form_factor_m2(self):
+        key = _normalize_key("DC P4101 M.2", "ssd")
+        assert key == "DC P4101"
+
+    def test_ssd_normalize_strips_ssd_suffix(self):
+        key = _normalize_key("D3-S4510 960GB SSD", "ssd")
+        assert key == "D3-S4510"
+
+    def test_ssd_normalize_handles_slash(self):
+        key = _normalize_key("S3500/S3510", "ssd")
+        assert key == "S3500"
+
+    def test_ssd_normalize_bare_number(self):
+        key = _normalize_key("540", "ssd")
+        assert key == "Intel SSD 540"
+
+    def test_ssd_normalize_bare_number_520(self):
+        key = _normalize_key("520", "ssd")
+        assert key == "Intel SSD 520"
+
+    def test_ssd_search_term_for_bare_number(self):
+        key = _normalize_key("540", "ssd")
+        term = _prepare_search_term(key, "ssd")
+        assert term == "Intel SSD 540 Series"
+
+    def test_ssd_search_term_for_model(self):
+        key = _normalize_key("S3500", "ssd")
+        term = _prepare_search_term(key, "ssd")
+        assert term == "Intel SSD S3500"
+
+    def test_ssd_search_term_for_dc_prefix(self):
+        key = _normalize_key("DC P4101", "ssd")
+        term = _prepare_search_term(key, "ssd")
+        assert term == "Intel SSD DC P4101"
+
 
 # ===================================================================
 # ARK result for NIC returns manufacturer_confirmed

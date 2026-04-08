@@ -348,6 +348,5 @@ class TestSummaryOutput:
             )
 
         assert result.exit_code == 0, result.output
-        assert "Checking Alpha: 2 models..." in result.output
-        assert "Checking Beta: 1 models..." in result.output
-        assert "Done:" in result.output
+        assert "Checking Alpha: 2 models... done" in result.output
+        assert "Checking Beta: 1 models... done" in result.output

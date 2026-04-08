@@ -160,6 +160,8 @@ class IntelARKChecker(BaseChecker):
         self._browser = None
         self._pw_context = None
         self._checker_disabled = False
+        self._google_captcha_count = 0
+        self._not_found_models: list[str] = []
 
     async def __aenter__(self):
         self = await super().__aenter__()
@@ -176,6 +178,19 @@ class IntelARKChecker(BaseChecker):
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self._google_captcha_count > 1:
+            logger.warning(
+                "ARK: Google CAPTCHA detected %d times"
+                " — consider using --no-google or a residential IP",
+                self._google_captcha_count,
+            )
+        if self._not_found_models:
+            logger.warning(
+                "ARK: %d models not found on Intel product pages (use -v to see details)",
+                len(self._not_found_models),
+            )
+            for model_key in self._not_found_models:
+                logger.info("ARK: not found: %s", model_key)
         if self._browser:
             await self._browser.close()
             self._browser = None
@@ -261,7 +276,7 @@ class IntelARKChecker(BaseChecker):
                     logger.info("Found %s via ARK search page", model_key)
 
             if not spec_url:
-                logger.warning("ARK: no product page found for '%s'", model_key)
+                self._not_found_models.append(model_key)
                 return None
 
             # Step 3: Navigate to product specifications page
@@ -316,9 +331,11 @@ class IntelARKChecker(BaseChecker):
             # Check for CAPTCHA / bot detection
             body_text = await page.inner_text("body")
             if "unusual traffic" in body_text.lower():
-                logger.warning(
-                    "ARK: Google CAPTCHA detected, falling through to next strategy"
-                )
+                self._google_captcha_count += 1
+                if self._google_captcha_count == 1:
+                    logger.warning(
+                        "ARK: Google CAPTCHA detected, falling through to next strategy"
+                    )
                 return None
 
             # Wait for search results
@@ -582,7 +599,21 @@ def _normalize_key(model_str: str, category: str = "cpu") -> str:
     if cat == "ssd":
         s = re.sub(r"^(?:INTEL|INT)\s+", "", s, flags=re.IGNORECASE).strip()
         s = re.sub(r"^SSD\s+", "", s, flags=re.IGNORECASE).strip()
-        return s.upper()
+        # Strip capacity prefixes: "1.2TB S3510" -> "S3510"
+        s = re.sub(r"^\d+(?:\.\d+)?(?:TB|GB)\s+", "", s, flags=re.IGNORECASE).strip()
+        # Strip form factor suffixes: "P3600 U.2" -> "P3600"
+        s = re.sub(r'\s+(?:U\.2|M\.2|2\.5"?)\s*$', "", s, flags=re.IGNORECASE).strip()
+        # Strip "SSD" suffix
+        s = re.sub(r"\s+SSD\s*$", "", s, flags=re.IGNORECASE).strip()
+        # Strip trailing capacity (in case it's after the model): "D3-S4510 960GB" -> "D3-S4510"
+        s = re.sub(r"\s+\d+(?:\.\d+)?(?:TB|GB)\s*$", "", s, flags=re.IGNORECASE).strip()
+        # Handle slash models: "S3500/S3510" -> "S3500"
+        s = re.sub(r"/\S+", "", s).strip()
+        # Prepend "Intel SSD " for bare numbers: "540" -> "Intel SSD 540"
+        result = s.upper()
+        if re.match(r"^\d+$", result):
+            result = f"Intel SSD {result}"
+        return result
 
     # CPU / optic: strip INTEL/XEON prefix
     s = re.sub(r"^(?:INTEL\s+)?(?:XEON\s+)?", "", s, flags=re.IGNORECASE)
@@ -620,10 +651,19 @@ def _build_ark_query(model: str, category: str) -> str:
         return f"Intel Ethernet {s.split()[0]}"
 
     if cat == "ssd":
-        # Strip INT/INTEL prefix
         s = re.sub(r"^(?:INTEL|INT)\s+", "", s).strip()
-        # Strip form factor suffixes: U.2, M.2
-        s = re.sub(r"\s+(?:U\.2|M\.2|2\.5|NVME|SATA|PCIE).*$", "", s).strip()
+        s = re.sub(r"^SSD\s+", "", s, flags=re.IGNORECASE).strip()
+        # Strip form factor suffixes: U.2, M.2, 2.5
+        s = re.sub(
+            r'\s+(?:U\.2|M\.2|2\.5"?|NVME|SATA|PCIE).*$', "", s,
+        ).strip()
+        # Strip capacity
+        s = re.sub(r"^\d+(?:\.\d+)?(?:TB|GB)\s+", "", s, flags=re.IGNORECASE)
+        s = re.sub(r"\s+\d+(?:\.\d+)?(?:TB|GB)\s*$", "", s, flags=re.IGNORECASE)
+        # Strip SSD suffix
+        s = re.sub(r"\s+SSD\s*$", "", s, flags=re.IGNORECASE).strip()
+        # Handle slash models
+        s = re.sub(r"/\S+", "", s).strip()
         return f"Intel SSD {s}"
 
     # For CPU/optic, fall through to _prepare_search_term
@@ -639,7 +679,16 @@ def _prepare_search_term(model_key: str, category: str = "cpu") -> str:
         return _build_ark_query(s, cat)
 
     if cat == "ssd":
-        return _build_ark_query(s, cat)
+        # model_key from _normalize_key may already start with "Intel SSD"
+        if s.upper().startswith("INTEL SSD"):
+            term = s
+        else:
+            term = _build_ark_query(s, cat)
+        # Append "Series" for bare numeric models for better search
+        core = re.sub(r"^Intel SSD\s+", "", term, flags=re.IGNORECASE).strip()
+        if len(core) < 6 and re.match(r"^\d+$", core):
+            term = f"{term} Series"
+        return term
 
     if cat == "optic":
         return s

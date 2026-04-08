@@ -2,6 +2,7 @@
 
 import csv
 import io
+import json
 import logging
 import re
 import threading
@@ -9,10 +10,13 @@ from datetime import datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+import openpyxl
 from fastapi import FastAPI, File, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 from pydantic import BaseModel, field_validator
 
 from eol_tool import __version__
@@ -41,7 +45,9 @@ _CSV_FIELDS = [
 ]
 
 _CSV_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "manual_overrides.csv"
+_LAST_RUN_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "last_run.json"
 _csv_lock = threading.Lock()
+_last_run_lock = threading.Lock()
 
 
 class OverrideBody(BaseModel):
@@ -260,6 +266,11 @@ async def check_upload(file: UploadFile = File(...)):
 
     dated_count = sum(1 for r in results if r.eol_date is not None)
 
+    result_dicts = [_result_to_dict(r) for r in results]
+
+    # Save snapshot for diff comparison
+    _save_last_run(result_dicts)
+
     return {
         "total": len(results),
         "filtered": len(filtered_rows),
@@ -268,7 +279,7 @@ async def check_upload(file: UploadFile = File(...)):
         "unknown": status_counts.get("unknown", 0),
         "not_found": status_counts.get("not_found", 0),
         "dated": dated_count,
-        "results": [_result_to_dict(r) for r in results],
+        "results": result_dicts,
     }
 
 
@@ -471,6 +482,267 @@ async def import_overrides(file: UploadFile = File(...)):
         _write_overrides_csv(existing, get_csv_path())
 
     return {"added": added, "updated": updated, "unchanged": unchanged}
+
+
+def _save_last_run(result_dicts: list[dict]) -> None:
+    """Save a snapshot of the current run for diff comparison.
+
+    Rotates the previous last_run.json to prev_run.json before writing.
+    """
+    snapshot = {
+        "timestamp": datetime.now().isoformat(),
+        "results": result_dicts,
+    }
+    with _last_run_lock:
+        _LAST_RUN_PATH.parent.mkdir(parents=True, exist_ok=True)
+        # Rotate: current last_run -> prev_run
+        prev_path = _LAST_RUN_PATH.with_name("prev_run.json")
+        if _LAST_RUN_PATH.exists():
+            _LAST_RUN_PATH.replace(prev_path)
+        # Write new last_run
+        tmp = _LAST_RUN_PATH.with_suffix(".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(snapshot, fh)
+        tmp.replace(_LAST_RUN_PATH)
+
+
+def _load_last_run() -> dict | None:
+    """Load the previous run snapshot, or None if not available."""
+    with _last_run_lock:
+        if not _LAST_RUN_PATH.exists():
+            return None
+        with open(_LAST_RUN_PATH, encoding="utf-8") as fh:
+            return json.load(fh)
+
+
+@app.get("/api/diff")
+async def diff():
+    """Compare current results against the previous run snapshot."""
+    snapshot = _load_last_run()
+    if not snapshot:
+        return {
+            "message": "No previous run data available. Upload a file via /api/check first.",
+            "changes": [],
+            "summary": {"new_eol": 0, "new_models": 0, "status_changes": 0},
+        }
+
+    # Load current cached results (re-read the snapshot as "current")
+    # The last_run.json IS the most recent run. To compute a diff we need
+    # both the current and the *previous* run. We keep two files:
+    # last_run.json (current) and prev_run.json (previous).
+    prev_path = _LAST_RUN_PATH.with_name("prev_run.json")
+    with _last_run_lock:
+        if not prev_path.exists():
+            return {
+                "message": "Only one run recorded so far. Run another check to see changes.",
+                "changes": [],
+                "summary": {"new_eol": 0, "new_models": 0, "status_changes": 0},
+                "current_run": snapshot.get("timestamp"),
+            }
+        with open(prev_path, encoding="utf-8") as fh:
+            prev_snapshot = json.load(fh)
+
+    prev_results = prev_snapshot.get("results", [])
+    curr_results = snapshot.get("results", [])
+
+    # Build lookup by (model, manufacturer)
+    prev_map: dict[tuple[str, str], dict] = {}
+    for r in prev_results:
+        key = (r.get("model", "").lower(), r.get("manufacturer", "").lower())
+        prev_map[key] = r
+
+    curr_map: dict[tuple[str, str], dict] = {}
+    for r in curr_results:
+        key = (r.get("model", "").lower(), r.get("manufacturer", "").lower())
+        curr_map[key] = r
+
+    changes = []
+
+    # New models and status changes
+    for key, curr in curr_map.items():
+        prev = prev_map.get(key)
+        if prev is None:
+            changes.append({
+                "model": curr.get("model", ""),
+                "manufacturer": curr.get("manufacturer", ""),
+                "previous_status": None,
+                "current_status": curr.get("status", ""),
+                "change_type": "new_model",
+            })
+        elif prev.get("status") != curr.get("status"):
+            change_type = "status_change"
+            if curr.get("status") == "eol" and prev.get("status") in ("active", "unknown"):
+                change_type = "new_eol"
+            changes.append({
+                "model": curr.get("model", ""),
+                "manufacturer": curr.get("manufacturer", ""),
+                "previous_status": prev.get("status", ""),
+                "current_status": curr.get("status", ""),
+                "change_type": change_type,
+            })
+
+    # Removed models
+    for key, prev in prev_map.items():
+        if key not in curr_map:
+            changes.append({
+                "model": prev.get("model", ""),
+                "manufacturer": prev.get("manufacturer", ""),
+                "previous_status": prev.get("status", ""),
+                "current_status": None,
+                "change_type": "removed",
+            })
+
+    summary = {
+        "new_eol": sum(1 for c in changes if c["change_type"] == "new_eol"),
+        "new_models": sum(1 for c in changes if c["change_type"] == "new_model"),
+        "status_changes": sum(1 for c in changes if c["change_type"] == "status_change"),
+        "removed": sum(1 for c in changes if c["change_type"] == "removed"),
+    }
+
+    return {
+        "changes": changes,
+        "summary": summary,
+        "current_run": snapshot.get("timestamp"),
+        "previous_run": prev_snapshot.get("timestamp"),
+    }
+
+
+_EXPORT_COLUMNS = [
+    "Model", "Manufacturer", "Category", "EOL Status", "EOL Date", "EOS Date",
+    "Date Source", "Risk Category", "EOL Reason", "Confidence", "Source", "Notes",
+]
+
+_EXPORT_WIDTHS = {
+    "Model": 35, "Manufacturer": 18, "Category": 14, "EOL Status": 14,
+    "EOL Date": 14, "EOS Date": 14, "Date Source": 22, "Risk Category": 16,
+    "EOL Reason": 22, "Confidence": 12, "Source": 25, "Notes": 40,
+}
+
+_EXPORT_STATUS_STYLES = {
+    "eol": (Font(color="FF0000"), PatternFill(fgColor="FFE6E6", fill_type="solid")),
+    "eol_announced": (Font(color="FF8C00"), PatternFill(fgColor="FFF3E0", fill_type="solid")),
+    "active": (Font(color="008000"), PatternFill(fgColor="E6FFE6", fill_type="solid")),
+}
+
+_EXPORT_RISK_STYLES = {
+    "security": (Font(color="8B0000"), PatternFill(fgColor="FFE0E0", fill_type="solid")),
+    "support": (Font(color="FF8C00"), PatternFill(fgColor="FFF0E0", fill_type="solid")),
+    "procurement": (Font(color="0000CD"), PatternFill(fgColor="E0E8FF", fill_type="solid")),
+}
+
+_EXPORT_HEADER_FONT = Font(bold=True, color="FFFFFF")
+_EXPORT_HEADER_FILL = PatternFill(fgColor="2F5496", fill_type="solid")
+
+_DATE_SOURCE_LABELS = {
+    "manufacturer_confirmed": "Manufacturer Confirmed",
+    "community_database": "Community Database",
+}
+
+_EOL_REASON_LABELS = {
+    "manufacturer_declared": "Manufacturer Declared",
+    "technology_generation": "Technology Generation",
+    "product_discontinued": "Product Discontinued",
+    "vendor_acquired": "Vendor Acquired",
+    "community_data": "Community Data",
+    "manual_override": "Manual Override",
+}
+
+
+@app.get("/api/export")
+async def export_results(
+    risk_category: str = Query("", description="Filter by risk category"),
+    status: str = Query("", description="Filter by EOL status"),
+):
+    """Export the last check results as an xlsx file, with optional filters."""
+    snapshot = _load_last_run()
+    if not snapshot:
+        return Response(
+            content='{"detail":"No results available. Run a check first."}',
+            status_code=404,
+            media_type="application/json",
+        )
+
+    results = snapshot.get("results", [])
+
+    # Apply filters
+    if risk_category:
+        results = [r for r in results if r.get("risk_category", "") == risk_category.lower()]
+    if status:
+        results = [r for r in results if r.get("status", "") == status.lower()]
+
+    # Build xlsx
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "EOL Report"
+
+    # Header
+    for col, name in enumerate(_EXPORT_COLUMNS, start=1):
+        cell = ws.cell(row=1, column=col, value=name)
+        cell.font = _EXPORT_HEADER_FONT
+        cell.fill = _EXPORT_HEADER_FILL
+        cell.alignment = Alignment(horizontal="center")
+
+    # Data rows
+    for row_idx, r in enumerate(results, start=2):
+        ws.cell(row=row_idx, column=1, value=r.get("model", ""))
+        ws.cell(row=row_idx, column=2, value=r.get("manufacturer", ""))
+        ws.cell(row=row_idx, column=3, value=r.get("category", ""))
+
+        status_val = r.get("status", "")
+        status_cell = ws.cell(row=row_idx, column=4, value=status_val)
+        style = _EXPORT_STATUS_STYLES.get(status_val)
+        if style:
+            status_cell.font = style[0]
+            status_cell.fill = style[1]
+
+        ws.cell(row=row_idx, column=5, value=r.get("eol_date") or "")
+        ws.cell(row=row_idx, column=6, value=r.get("eos_date") or "")
+        ws.cell(
+            row=row_idx, column=7,
+            value=_DATE_SOURCE_LABELS.get(r.get("date_source", ""), "Not Available"),
+        )
+
+        risk_val = r.get("risk_category", "")
+        risk_cell = ws.cell(row=row_idx, column=8, value=risk_val)
+        risk_style = _EXPORT_RISK_STYLES.get(risk_val)
+        if risk_style:
+            risk_cell.font = risk_style[0]
+            risk_cell.fill = risk_style[1]
+
+        ws.cell(
+            row=row_idx, column=9,
+            value=_EOL_REASON_LABELS.get(r.get("eol_reason", ""), ""),
+        )
+        ws.cell(row=row_idx, column=10, value=r.get("confidence", 0))
+        ws.cell(row=row_idx, column=11, value=r.get("source", ""))
+        ws.cell(row=row_idx, column=12, value=r.get("notes", ""))
+
+    # Column widths
+    for col, name in enumerate(_EXPORT_COLUMNS, start=1):
+        ws.column_dimensions[get_column_letter(col)].width = _EXPORT_WIDTHS.get(name, 15)
+
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(_EXPORT_COLUMNS))}{len(results) + 1}"
+    ws.freeze_panes = "A2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    wb.close()
+    buf.seek(0)
+
+    # Build filename with filters
+    parts = ["eol-report"]
+    if risk_category:
+        parts.append(risk_category.lower())
+    if status:
+        parts.append(status.lower())
+    parts.append(datetime.now().strftime("%Y-%m-%d"))
+    filename = "-".join(parts) + ".xlsx"
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # Mount static files last so API routes take precedence

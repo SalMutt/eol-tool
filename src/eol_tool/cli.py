@@ -49,52 +49,54 @@ async def _run_with_progress(
     concurrency: int,
     no_cache: bool,
     skip_fallback: bool,
+    quiet: bool = False,
 ) -> list[EOLResult]:
     """Run check pipeline with CLI progress output."""
+    import sys
+
     from .cache import ResultCache
     from .check_pipeline import run_check_pipeline
+    from .models import EOLStatus
 
     cache_inst = ResultCache() if not no_cache else None
 
-    try:
-        by_mfr: dict[str, list[HardwareModel]] = {}
-        for m in models_to_check:
-            by_mfr.setdefault(m.manufacturer, []).append(m)
-
-        for mfr_name, mfr_models in sorted(by_mfr.items()):
-            if cache_inst:
-                cached_count = 0
-                for m in mfr_models:
-                    if await cache_inst.get(m.model, m.manufacturer):
-                        cached_count += 1
-                to_check = len(mfr_models) - cached_count
-                if cached_count:
-                    click.echo(
-                        f"  {mfr_name}: {cached_count} cached, {to_check} to check"
-                    )
-                if to_check:
-                    click.echo(f"Checking {mfr_name}: {to_check} models...")
+    def _progress(mfr_name, model_count, batch_results, mfr_idx, total_mfrs):
+        if quiet:
+            return
+        eol = sum(1 for r in batch_results if r.status in (EOLStatus.EOL, EOLStatus.EOL_ANNOUNCED))
+        active = sum(1 for r in batch_results if r.status == EOLStatus.ACTIVE)
+        other = len(batch_results) - eol - active
+        parts = []
+        if eol:
+            parts.append(f"{eol} eol")
+        if active:
+            parts.append(f"{active} active")
+        if other:
+            parts.append(f"{other} other")
+        counts_str = ", ".join(parts) if parts else "all cached"
+        line = (
+            f"Checking {mfr_name}: {model_count} models..."
+            f" done ({counts_str}) [{mfr_idx}/{total_mfrs} manufacturers]"
+        )
+        try:
+            if sys.stderr.isatty():
+                print(f"\r{line}\033[K", end="", file=sys.stderr, flush=True)
+                if mfr_idx == total_mfrs:
+                    print("", file=sys.stderr)
             else:
-                click.echo(f"Checking {mfr_name}: {len(mfr_models)} models...")
+                print(line, file=sys.stderr)
+        except (OSError, ValueError):
+            pass
 
+    try:
         results = await run_check_pipeline(
             models_to_check,
             concurrency=concurrency,
             use_cache=not no_cache,
             skip_fallback=skip_fallback,
             cache=cache_inst,
+            progress_callback=_progress,
         )
-
-        counts: dict[str, int] = {}
-        for r in results:
-            counts[r.status.value] = counts.get(r.status.value, 0) + 1
-        parts = [
-            f"{counts.get(s, 0)} {s}"
-            for s in ["eol", "active", "unknown"]
-            if counts.get(s, 0)
-        ]
-        if parts:
-            click.echo(f"  Done: {', '.join(parts)}")
 
         return results
     finally:
@@ -114,18 +116,22 @@ async def _run_with_progress(
 @click.option("--no-cache", is_flag=True, help="Skip the result cache")
 @click.option("--skip-fallback", is_flag=True, help="Skip the endoflife.date fallback checker")
 @click.option("--show-filtered", is_flag=True, help="List rows removed by the input filter")
+@click.option("-q", "--quiet", is_flag=True, help="Suppress progress lines and scraper warnings")
+@click.option("--show-warnings", is_flag=True, help="Show all individual warnings in detail")
 def check(
     input_path, output_path, manufacturer, concurrency, dry_run, no_cache, skip_fallback,
-    show_filtered,
+    show_filtered, quiet, show_warnings,
 ):
     """Check EOL status for hardware models."""
-    models = read_models(Path(input_path))
-    click.echo(f"Loaded {len(models)} models")
+    models = read_models(Path(input_path), show_warnings=show_warnings)
+
+    if not quiet:
+        click.echo(f"Loaded {len(models)} models")
 
     apply_manufacturer_corrections(models)
 
     models, filtered_rows = filter_models(models)
-    if filtered_rows:
+    if filtered_rows and not quiet:
         if show_filtered:
             click.echo(f"\nFiltered {len(filtered_rows)} junk rows:")
             for f in filtered_rows:
@@ -140,9 +146,10 @@ def check(
     for m in models:
         by_mfr.setdefault(m.manufacturer, []).append(m)
 
-    click.echo(f"\nManufacturers ({len(by_mfr)}):")
-    for mfr, mfr_models in sorted(by_mfr.items()):
-        click.echo(f"  {mfr or '(none)'}: {len(mfr_models)} models")
+    if not quiet:
+        click.echo(f"\nManufacturers ({len(by_mfr)}):")
+        for mfr, mfr_models in sorted(by_mfr.items()):
+            click.echo(f"  {mfr or '(none)'}: {len(mfr_models)} models")
 
     if dry_run:
         click.echo("\n--dry-run specified, exiting without checking.")
@@ -161,9 +168,10 @@ def check(
         click.echo("\nNo checkers registered. Add checker modules to eol_tool/checkers/.")
         return
 
-    click.echo("")
+    if not quiet:
+        click.echo("")
     results = asyncio.run(
-        _run_with_progress(models_to_check, concurrency, no_cache, skip_fallback)
+        _run_with_progress(models_to_check, concurrency, no_cache, skip_fallback, quiet=quiet)
     )
 
     if output_path:

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from collections.abc import Callable
 from datetime import datetime
 
 from .cache import ResultCache
@@ -76,6 +77,7 @@ async def run_check_pipeline(
     use_cache: bool = True,
     skip_fallback: bool = False,
     cache: ResultCache | None = None,
+    progress_callback: Callable[[str, int, list[EOLResult], int, int], None] | None = None,
 ) -> list[EOLResult]:
     """Run all applicable checkers on a list of models and return best results.
 
@@ -95,6 +97,8 @@ async def run_check_pipeline(
         cache_inst = None
 
     all_results: list[EOLResult] = []
+    total_mfrs = len(by_mfr)
+    mfr_index = 0
 
     try:
         for mfr_name, mfr_models in sorted(by_mfr.items()):
@@ -111,6 +115,9 @@ async def run_check_pipeline(
                 to_check = mfr_models
 
             if not to_check:
+                mfr_index += 1
+                if progress_callback:
+                    progress_callback(mfr_name, len(mfr_models), [], mfr_index, total_mfrs)
                 continue
 
             checker_classes = []
@@ -131,15 +138,22 @@ async def run_check_pipeline(
                 checker_classes.append(fallback_cls)
 
             if not checker_classes:
+                no_checker_results = []
                 for m in to_check:
-                    all_results.append(
-                        EOLResult(
-                            model=m,
-                            status=EOLStatus.UNKNOWN,
-                            checked_at=datetime.now(),
-                            source_name="",
-                            notes="no-checker-available",
-                        )
+                    r = EOLResult(
+                        model=m,
+                        status=EOLStatus.UNKNOWN,
+                        checked_at=datetime.now(),
+                        source_name="",
+                        notes="no-checker-available",
+                    )
+                    no_checker_results.append(r)
+                all_results.extend(no_checker_results)
+                mfr_index += 1
+                if progress_callback:
+                    progress_callback(
+                        mfr_name, len(mfr_models), no_checker_results,
+                        mfr_index, total_mfrs,
                     )
                 continue
 
@@ -178,6 +192,13 @@ async def run_check_pipeline(
                     await cache_inst.set(r)
 
             all_results.extend(batch_results)
+
+            mfr_index += 1
+            if progress_callback:
+                progress_callback(
+                    mfr_name, len(mfr_models), batch_results,
+                    mfr_index, total_mfrs,
+                )
 
         if not skip_fallback:
             logger.info("Supplementing missing dates from endoflife.date...")

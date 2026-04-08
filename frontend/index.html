@@ -96,14 +96,28 @@ function StatCard({ label, value, color, total }) {
   );
 }
 
+var EOL_REASON_LABELS = {
+  "manufacturer_declared": "Manufacturer Declared",
+  "technology_generation": "Technology Generation",
+  "product_discontinued": "Product Discontinued",
+  "vendor_acquired": "Vendor Acquired",
+  "manual_override": "Manual Override",
+  "community_data": "Community Data",
+};
+
+function formatEolReason(reason) {
+  if (!reason || reason === "none") return "\u2014";
+  return EOL_REASON_LABELS[reason] || reason.replace(/_/g, " ");
+}
+
 function DateSourceBadge({ dateSource }) {
   if (dateSource === "manufacturer_confirmed") {
-    return e("span", { style: { padding: "1px 6px", borderRadius: 3, background: "#0d2818", color: "#22c55e", fontSize: 9, fontWeight: 600, fontFamily: mono, textTransform: "uppercase" } }, "Mfr");
+    return e("span", { style: { padding: "2px 8px", borderRadius: 3, background: "#0d2818", border: "1px solid #1a5632", color: "#22c55e", fontSize: 10, fontWeight: 600, fontFamily: mono } }, "Manufacturer Confirmed");
   }
   if (dateSource === "community_database") {
-    return e("span", { style: { padding: "1px 6px", borderRadius: 3, background: "#0c1929", color: "#3b82f6", fontSize: 9, fontWeight: 600, fontFamily: mono, textTransform: "uppercase" } }, "Community");
+    return e("span", { style: { padding: "2px 8px", borderRadius: 3, background: "#0c1929", border: "1px solid #1d3a5c", color: "#3b82f6", fontSize: 10, fontWeight: 600, fontFamily: mono } }, "Community Database");
   }
-  return e("span", { style: { color: "#3a3a42", fontSize: 12 } }, "—");
+  return e("span", { style: { padding: "2px 8px", borderRadius: 3, background: "#1a1a1e", border: "1px solid #2a2a32", color: "#71717a", fontSize: 10, fontWeight: 600, fontFamily: mono } }, "Not Available");
 }
 
 function ModelTable({ models }) {
@@ -148,7 +162,7 @@ function ModelTable({ models }) {
           e("td", { style: { padding: "8px 12px", color: "#71717a", fontSize: 12 } }, m.category),
           e("td", { style: { padding: "8px 12px" } }, e(StatusBadge, { status: m.status })),
           e("td", { style: { padding: "8px 12px" } }, e(RiskBadge, { risk: m.risk })),
-          e("td", { style: { padding: "8px 12px", color: "#71717a", fontSize: 11, fontFamily: mono } }, m.eolReason && m.eolReason !== "none" ? m.eolReason.replace(/_/g, " ") : "—"),
+          e("td", { style: { padding: "8px 12px", color: "#71717a", fontSize: 11, fontFamily: mono } }, formatEolReason(m.eolReason)),
           e("td", { style: { padding: "8px 12px" } }, eolDateCell),
           e("td", { style: { padding: "8px 12px", color: "#a1a1aa", fontSize: 12, fontFamily: mono } }, m.releaseDate || "\u2014"),
           e("td", { style: { padding: "8px 12px" } }, e(DateSourceBadge, { dateSource: m.dateSource })),
@@ -457,7 +471,7 @@ function OverridesPage({ onBack }) {
                   e("span", { style: { padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600, fontFamily: mono, textTransform: "uppercase", color: statusColors[o.status] || "#ca8a04", background: o.status === "eol" ? "#2d1215" : o.status === "active" ? "#0d2818" : "#1e1b16" } }, o.status || "unknown")
                 ),
                 e("td", { style: { padding: "8px 12px" } }, e(RiskBadge, { risk: o.risk_category })),
-                e("td", { style: { padding: "8px 12px", color: "#71717a", fontSize: 11, fontFamily: mono } }, o.eol_reason && o.eol_reason !== "none" ? o.eol_reason.replace(/_/g, " ") : "\u2014"),
+                e("td", { style: { padding: "8px 12px", color: "#71717a", fontSize: 11, fontFamily: mono } }, formatEolReason(o.eol_reason)),
                 e("td", { style: { padding: "8px 12px", color: "#52525b", fontSize: 11, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: o.notes }, o.notes || "\u2014"),
                 e("td", { style: { padding: "8px 12px", textAlign: "right", whiteSpace: "nowrap" } },
                   e("button", {
@@ -575,6 +589,83 @@ function OverridesPage({ onBack }) {
   );
 }
 
+function FilterBadge({ label, count, active, color, onClick }) {
+  var bg = active ? (color === "#ef4444" ? "#2d1215" : color === "#f97316" ? "#2d1c0a" : color === "#eab308" ? "#2d2a0a" : color === "#3b82f6" ? "#0c1929" : "#1a1a1e") : "#111114";
+  var border = active ? (color || "#3a3a42") : "#1e1e24";
+  var textColor = active ? (color || "#e4e4e7") : "#71717a";
+  return e("button", {
+    onClick: onClick,
+    style: {
+      display: "inline-flex", alignItems: "center", gap: 6,
+      padding: "5px 12px", borderRadius: 6,
+      background: bg, border: "1px solid " + border,
+      color: textColor, fontSize: 12, fontWeight: active ? 600 : 400,
+      cursor: "pointer", fontFamily: mono, transition: "all 0.15s",
+      whiteSpace: "nowrap",
+    },
+  },
+    label,
+    count !== undefined ? e("span", {
+      style: {
+        padding: "1px 6px", borderRadius: 10,
+        background: active ? "rgba(255,255,255,0.1)" : "#1e1e24",
+        fontSize: 10, fontWeight: 600, color: active ? textColor : "#52525b",
+      },
+    }, count) : null,
+  );
+}
+
+function DiffTable({ changes }) {
+  if (!changes || changes.length === 0) {
+    return e("div", { style: { textAlign: "center", padding: 48, color: "#52525b", fontSize: 14 } }, "No changes detected between runs.");
+  }
+
+  var CHANGE_TYPE_CONFIG = {
+    new_eol: { label: "New EOL", color: "#ef4444", bg: "#2d1215" },
+    new_model: { label: "New Model", color: "#3b82f6", bg: "#0c1929" },
+    status_change: { label: "Status Changed", color: "#eab308", bg: "#2d2a0a" },
+    removed: { label: "Removed", color: "#71717a", bg: "#1a1a1e" },
+  };
+
+  var headers = ["Model", "Manufacturer", "Previous Status", "Current Status", "Change Type"];
+
+  return e("div", { style: { border: "1px solid #1e1e24", borderRadius: 8, overflow: "auto" } },
+    e("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
+      e("thead", null,
+        e("tr", { style: { background: "#0a0a0d" } },
+          headers.map(function(h) {
+            return e("th", {
+              key: h,
+              style: {
+                padding: "8px 12px", textAlign: "left", color: "#52525b",
+                fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em",
+                fontFamily: mono, fontWeight: 600, borderBottom: "1px solid #1e1e24",
+              },
+            }, h);
+          })
+        )
+      ),
+      e("tbody", null,
+        changes.map(function(c, i) {
+          var cfg = CHANGE_TYPE_CONFIG[c.change_type] || CHANGE_TYPE_CONFIG.status_change;
+          return e("tr", {
+            key: i,
+            style: { background: i % 2 === 0 ? "#0c0c0f" : "#0e0e12", borderBottom: "1px solid #141418" },
+          },
+            e("td", { style: { padding: "8px 12px", color: "#d4d4d8", fontFamily: mono, fontSize: 12 } }, c.model),
+            e("td", { style: { padding: "8px 12px", color: "#71717a", fontSize: 12 } }, c.manufacturer || "\u2014"),
+            e("td", { style: { padding: "8px 12px" } }, c.previous_status ? e(StatusBadge, { status: c.previous_status }) : e("span", { style: { color: "#3a3a42", fontSize: 12 } }, "\u2014")),
+            e("td", { style: { padding: "8px 12px" } }, c.current_status ? e(StatusBadge, { status: c.current_status }) : e("span", { style: { color: "#3a3a42", fontSize: 12 } }, "\u2014")),
+            e("td", { style: { padding: "8px 12px" } },
+              e("span", { style: { padding: "2px 8px", borderRadius: 3, background: cfg.bg, color: cfg.color, fontSize: 11, fontWeight: 600, fontFamily: mono } }, cfg.label)
+            ),
+          );
+        })
+      )
+    )
+  );
+}
+
 function App() {
   const [page, setPage] = useState("main");
   const [data, setData] = useState(null);
@@ -593,6 +684,10 @@ function App() {
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [uploadProgress, setUploadProgress] = useState("");
+  const [activeTab, setActiveTab] = useState("results");
+  const [diffData, setDiffData] = useState(null);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [diffError, setDiffError] = useState("");
 
 
   var parseFile = useCallback(function(file) {
@@ -700,8 +795,16 @@ function App() {
   var filtered = useMemo(function() {
     if (!data) return [];
     return data.models.filter(function(m) {
-      if (statusFilter !== "all" && m.status !== statusFilter) return false;
-      if (riskFilter !== "all" && m.risk !== riskFilter) return false;
+      if (statusFilter !== "all") {
+        if (statusFilter === "unknown") {
+          if (m.status !== "unknown" && m.status !== "not_found") return false;
+        } else if (m.status !== statusFilter) return false;
+      }
+      if (riskFilter !== "all") {
+        if (riskFilter === "none") {
+          if (m.risk && m.risk !== "none") return false;
+        } else if (m.risk !== riskFilter) return false;
+      }
       if (searchQuery) {
         var q = searchQuery.toLowerCase();
         return m.model.toLowerCase().indexOf(q) !== -1 ||
@@ -738,13 +841,16 @@ function App() {
     return {
       total: m.length,
       eol: m.filter(function(x) { return x.status === "eol"; }).length,
+      eolAnnounced: m.filter(function(x) { return x.status === "eol_announced"; }).length,
       active: m.filter(function(x) { return x.status === "active"; }).length,
-      unknown: m.filter(function(x) { return x.status === "unknown"; }).length,
+      unknown: m.filter(function(x) { return x.status === "unknown" || x.status === "not_found"; }).length,
       notFound: m.filter(function(x) { return x.status === "not_found"; }).length,
       dated: m.filter(function(x) { return x.eolDate && x.eolDate !== ""; }).length,
       security: m.filter(function(x) { return x.risk === "security"; }).length,
       support: m.filter(function(x) { return x.risk === "support"; }).length,
       procurement: m.filter(function(x) { return x.risk === "procurement"; }).length,
+      informational: m.filter(function(x) { return x.risk === "informational"; }).length,
+      noRisk: m.filter(function(x) { return !x.risk || x.risk === "none"; }).length,
     };
   }, [data]);
 
@@ -898,6 +1004,34 @@ function App() {
   var handleSearchKeyDown = useCallback(function(ev) {
     if (ev.key === "Enter") handleSearch();
   }, [handleSearch]);
+
+  var fetchDiff = useCallback(function() {
+    setDiffLoading(true);
+    setDiffError("");
+    fetch(API_BASE + "/api/diff")
+      .then(function(resp) {
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        return resp.json();
+      })
+      .then(function(d) { setDiffData(d); setDiffLoading(false); })
+      .catch(function(err) {
+        setDiffError(err.message === "Failed to fetch" ? "API unavailable" : err.message);
+        setDiffLoading(false);
+      });
+  }, []);
+
+  var handleTabChange = useCallback(function(tab) {
+    setActiveTab(tab);
+    if (tab === "changes" && !diffData && !diffLoading) fetchDiff();
+  }, [diffData, diffLoading, fetchDiff]);
+
+  var handleBackendExport = useCallback(function() {
+    var params = [];
+    if (riskFilter !== "all") params.push("risk_category=" + encodeURIComponent(riskFilter));
+    if (statusFilter !== "all") params.push("status=" + encodeURIComponent(statusFilter));
+    var qs = params.length > 0 ? "?" + params.join("&") : "";
+    window.location.href = API_BASE + "/api/export" + qs;
+  }, [riskFilter, statusFilter]);
 
   // Processing screen — shown while API is checking raw inventory
   if (page === "overrides") return e(OverridesPage, { onBack: function() { setPage("main"); } });
@@ -1263,6 +1397,17 @@ function App() {
             onMouseLeave: function(ev) { ev.currentTarget.style.background = "#0d2818"; },
           }, "\u2B07 Export All (" + stats.total + ")"),
           e("button", {
+            onClick: handleBackendExport,
+            title: "Export filtered results from the server as xlsx",
+            style: {
+              padding: "8px 16px", background: "#1e1b16", border: "1px solid #4a3f2f",
+              borderRadius: 6, color: "#ca8a04", fontSize: 12, cursor: "pointer", fontFamily: mono,
+              fontWeight: 600,
+            },
+            onMouseEnter: function(ev) { ev.currentTarget.style.background = "#2d2a0a"; },
+            onMouseLeave: function(ev) { ev.currentTarget.style.background = "#1e1b16"; },
+          }, "\u2B07 Server Export"),
+          e("button", {
             onClick: function() { setPage("overrides"); },
             style: {
               padding: "8px 16px", background: "transparent", border: "1px solid #1e1e24",
@@ -1313,11 +1458,40 @@ function App() {
         ),
       ),
 
-      // Filters
+      // Risk Category Filter Badges
+      e("div", {
+        style: { marginBottom: 8, background: "#0c0c0f", border: "1px solid #1e1e24", borderRadius: 6, padding: "10px 16px" },
+      },
+        e("div", { style: { fontSize: 10, color: "#52525b", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: mono, marginBottom: 8 } }, "Risk Category"),
+        e("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+          e(FilterBadge, { label: "All", count: stats.total, active: riskFilter === "all", color: "#a1a1aa", onClick: function() { setRiskFilter("all"); } }),
+          e(FilterBadge, { label: "Security", count: stats.security, active: riskFilter === "security", color: "#ef4444", onClick: function() { setRiskFilter("security"); } }),
+          e(FilterBadge, { label: "Support", count: stats.support, active: riskFilter === "support", color: "#f97316", onClick: function() { setRiskFilter("support"); } }),
+          e(FilterBadge, { label: "Procurement", count: stats.procurement, active: riskFilter === "procurement", color: "#eab308", onClick: function() { setRiskFilter("procurement"); } }),
+          e(FilterBadge, { label: "Informational", count: stats.informational, active: riskFilter === "informational", color: "#3b82f6", onClick: function() { setRiskFilter("informational"); } }),
+          e(FilterBadge, { label: "No Risk", count: stats.noRisk, active: riskFilter === "none", color: "#71717a", onClick: function() { setRiskFilter("none"); } }),
+        ),
+      ),
+
+      // EOL Status Filter Badges
+      e("div", {
+        style: { marginBottom: 8, background: "#0c0c0f", border: "1px solid #1e1e24", borderRadius: 6, padding: "10px 16px" },
+      },
+        e("div", { style: { fontSize: 10, color: "#52525b", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: mono, marginBottom: 8 } }, "EOL Status"),
+        e("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+          e(FilterBadge, { label: "All", count: stats.total, active: statusFilter === "all", color: "#a1a1aa", onClick: function() { setStatusFilter("all"); } }),
+          e(FilterBadge, { label: "EOL", count: stats.eol, active: statusFilter === "eol", color: "#ef4444", onClick: function() { setStatusFilter("eol"); } }),
+          e(FilterBadge, { label: "EOL Announced", count: stats.eolAnnounced, active: statusFilter === "eol_announced", color: "#f97316", onClick: function() { setStatusFilter("eol_announced"); } }),
+          e(FilterBadge, { label: "Active", count: stats.active, active: statusFilter === "active", color: "#22c55e", onClick: function() { setStatusFilter("active"); } }),
+          e(FilterBadge, { label: "Unknown", count: stats.unknown, active: statusFilter === "unknown", color: "#ca8a04", onClick: function() { setStatusFilter("unknown"); } }),
+        ),
+      ),
+
+      // Search + Sort + Actions
       e("div", {
         style: {
           display: "flex", gap: 12, marginBottom: 16, alignItems: "center", flexWrap: "wrap",
-          background: "#0c0c0f", border: "1px solid #1e1e24", borderRadius: 6, padding: "12px 16px",
+          background: "#0c0c0f", border: "1px solid #1e1e24", borderRadius: 6, padding: "10px 16px",
         },
       },
         e("input", {
@@ -1329,26 +1503,6 @@ function App() {
             fontFamily: mono,
           },
         }),
-        e("select", {
-          value: statusFilter, onChange: function(ev) { setStatusFilter(ev.target.value); },
-          style: { padding: "8px 12px", background: "#111114", border: "1px solid #1e1e24", borderRadius: 4, color: "#a1a1aa", fontSize: 12, cursor: "pointer", fontFamily: mono },
-        },
-          e("option", { value: "all" }, "All Status"),
-          e("option", { value: "eol" }, "EOL"),
-          e("option", { value: "active" }, "Active"),
-          e("option", { value: "unknown" }, "Unknown"),
-          e("option", { value: "not_found" }, "Not Found"),
-        ),
-        e("select", {
-          value: riskFilter, onChange: function(ev) { setRiskFilter(ev.target.value); },
-          style: { padding: "8px 12px", background: "#111114", border: "1px solid #1e1e24", borderRadius: 4, color: "#a1a1aa", fontSize: 12, cursor: "pointer", fontFamily: mono },
-        },
-          e("option", { value: "all" }, "All Risk"),
-          e("option", { value: "security" }, "Security"),
-          e("option", { value: "support" }, "Support"),
-          e("option", { value: "procurement" }, "Procurement"),
-          e("option", { value: "informational" }, "Info"),
-        ),
         e("select", {
           value: sortBy, onChange: function(ev) { setSortBy(ev.target.value); },
           style: { padding: "8px 12px", background: "#111114", border: "1px solid #1e1e24", borderRadius: 4, color: "#a1a1aa", fontSize: 12, cursor: "pointer", fontFamily: mono },
@@ -1368,31 +1522,78 @@ function App() {
             style: { padding: "6px 10px", background: "#1e1e24", border: "none", borderRadius: 4, color: "#71717a", fontSize: 11, cursor: "pointer", fontFamily: mono },
           }, "Collapse All"),
         ),
-      ),
-
-      // Results count
-      e("div", { style: { fontSize: 12, color: "#52525b", marginBottom: 12, fontFamily: mono } },
-        filtered.length + " models across " + grouped.length + " manufacturers",
         (statusFilter !== "all" || riskFilter !== "all" || searchQuery) ?
           e("button", {
             onClick: function() { setStatusFilter("all"); setRiskFilter("all"); setSearchQuery(""); },
-            style: { marginLeft: 12, padding: "2px 8px", background: "#1e1e24", border: "none", borderRadius: 3, color: "#71717a", fontSize: 11, cursor: "pointer" },
-          }, "Clear filters") : null,
+            style: { padding: "6px 12px", background: "#2d1215", border: "1px solid #6b2128", borderRadius: 4, color: "#ef4444", fontSize: 11, cursor: "pointer", fontFamily: mono },
+          }, "Clear Filters") : null,
       ),
 
-      // Groups
-      e("div", { style: { display: "flex", flexDirection: "column", gap: 2 } },
-        grouped.map(function(pair) {
-          var name = pair[0], models = pair[1];
-          return e(ManufacturerGroup, {
-            key: name, name: name, models: models,
-            expanded: !!expanded[name],
-            onToggle: function() { setExpanded(function(prev) { var next = Object.assign({}, prev); next[name] = !next[name]; return next; }); },
-          });
-        }),
+      // Tab bar: Results / Changes
+      e("div", { style: { display: "flex", gap: 0, marginBottom: 16, borderBottom: "1px solid #1e1e24" } },
+        e("button", {
+          onClick: function() { handleTabChange("results"); },
+          style: {
+            padding: "10px 20px", background: "transparent", border: "none",
+            borderBottom: activeTab === "results" ? "2px solid #3b82f6" : "2px solid transparent",
+            color: activeTab === "results" ? "#e4e4e7" : "#52525b",
+            fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: mono,
+          },
+        }, "Results"),
+        e("button", {
+          onClick: function() { handleTabChange("changes"); },
+          style: {
+            padding: "10px 20px", background: "transparent", border: "none",
+            borderBottom: activeTab === "changes" ? "2px solid #3b82f6" : "2px solid transparent",
+            color: activeTab === "changes" ? "#e4e4e7" : "#52525b",
+            fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: mono,
+          },
+        }, "Changes"),
       ),
 
-      grouped.length === 0 ? e("div", { style: { textAlign: "center", padding: 48, color: "#52525b", fontSize: 14 } }, "No models match the current filters.") : null,
+      // Tab content: Results
+      activeTab === "results" ? e("div", null,
+        // Results count
+        e("div", { style: { fontSize: 12, color: "#52525b", marginBottom: 12, fontFamily: mono } },
+          filtered.length + " models across " + grouped.length + " manufacturers",
+        ),
+
+        // Groups
+        e("div", { style: { display: "flex", flexDirection: "column", gap: 2 } },
+          grouped.map(function(pair) {
+            var name = pair[0], models = pair[1];
+            return e(ManufacturerGroup, {
+              key: name, name: name, models: models,
+              expanded: !!expanded[name],
+              onToggle: function() { setExpanded(function(prev) { var next = Object.assign({}, prev); next[name] = !next[name]; return next; }); },
+            });
+          }),
+        ),
+
+        grouped.length === 0 ? e("div", { style: { textAlign: "center", padding: 48, color: "#52525b", fontSize: 14 } }, "No models match the current filters.") : null,
+      ) : null,
+
+      // Tab content: Changes
+      activeTab === "changes" ? e("div", null,
+        diffLoading ? e("div", { style: { textAlign: "center", padding: 48, color: "#52525b" } }, "Loading changes...") : null,
+        diffError ? e("div", { style: { padding: "12px 16px", background: "#2d1215", border: "1px solid #6b2128", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "#ef4444", fontFamily: mono } }, diffError) : null,
+        diffData && diffData.message ? e("div", { style: { textAlign: "center", padding: 48, color: "#71717a", fontSize: 13, fontFamily: mono } }, diffData.message) : null,
+        diffData && !diffData.message ? e("div", null,
+          // Summary badges
+          e("div", { style: { display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" } },
+            diffData.summary.new_eol > 0 ? e("span", { style: { padding: "4px 12px", borderRadius: 6, background: "#2d1215", border: "1px solid #6b2128", color: "#ef4444", fontSize: 12, fontWeight: 600, fontFamily: mono } }, diffData.summary.new_eol + " New EOL") : null,
+            diffData.summary.new_models > 0 ? e("span", { style: { padding: "4px 12px", borderRadius: 6, background: "#0c1929", border: "1px solid #1d3a5c", color: "#3b82f6", fontSize: 12, fontWeight: 600, fontFamily: mono } }, diffData.summary.new_models + " New Models") : null,
+            diffData.summary.status_changes > 0 ? e("span", { style: { padding: "4px 12px", borderRadius: 6, background: "#2d2a0a", border: "1px solid #6b5f12", color: "#eab308", fontSize: 12, fontWeight: 600, fontFamily: mono } }, diffData.summary.status_changes + " Status Changes") : null,
+            diffData.summary.removed > 0 ? e("span", { style: { padding: "4px 12px", borderRadius: 6, background: "#1a1a1e", border: "1px solid #3a3a42", color: "#71717a", fontSize: 12, fontWeight: 600, fontFamily: mono } }, diffData.summary.removed + " Removed") : null,
+          ),
+          diffData.previous_run ? e("div", { style: { fontSize: 11, color: "#52525b", marginBottom: 12, fontFamily: mono } }, "Comparing: " + diffData.previous_run + " \u2192 " + diffData.current_run) : null,
+          e(DiffTable, { changes: diffData.changes }),
+          e("button", {
+            onClick: fetchDiff,
+            style: { marginTop: 12, padding: "6px 14px", background: "#1e1e24", border: "none", borderRadius: 4, color: "#71717a", fontSize: 11, cursor: "pointer", fontFamily: mono },
+          }, "Refresh"),
+        ) : null,
+      ) : null,
 
       // Footer
       e("div", { style: { marginTop: 32, paddingTop: 16, borderTop: "1px solid #1e1e24", textAlign: "center" } },

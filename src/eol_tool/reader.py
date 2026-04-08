@@ -1,6 +1,7 @@
 """Read hardware models from spreadsheets and write results."""
 
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -78,7 +79,76 @@ _DATE_SOURCE_LABELS = {
 }
 
 
-def read_models(path: Path) -> list[HardwareModel]:
+# ── Manufacturer auto-detection rules ────────────────────────────────
+# Each rule is (compiled_regex, manufacturer_name).
+# Rules are tested case-insensitively against the model string.
+
+_MANUFACTURER_RULES: list[tuple[re.Pattern[str], str]] = [
+    # Juniper networking
+    (re.compile(r"^(?:EX|QFX|SRX|MX)\d", re.IGNORECASE), "Juniper"),
+    (re.compile(r"^(?:CHAS-|JPSU-|FFANTRAY-|RE-|MPC|MIC-|PF-)", re.IGNORECASE), "Juniper"),
+    # Supermicro
+    (re.compile(
+        r"^(?:CSE-|X(?:9|1[0-3])|H1[23]|AOC-|RSC-|BPN-|SNK-|PIO-)", re.IGNORECASE,
+    ), "Supermicro"),
+    # Seagate (ST prefix + digits; HGST legacy)
+    (re.compile(r"^ST\d{3,}[A-Z]", re.IGNORECASE), "Seagate"),
+    (re.compile(r"^HGST", re.IGNORECASE), "Seagate"),
+    # WD
+    (re.compile(r"^(?:WD\d|WUS|WUSTR)", re.IGNORECASE), "WD"),
+    # Kingston memory
+    (re.compile(r"^(?:KTD-|KVR|KSM|KTL-|K\dA)", re.IGNORECASE), "Kingston"),
+    # Micron
+    (re.compile(r"^(?:MTA|MEM-DR)", re.IGNORECASE), "Micron"),
+    # Samsung
+    (re.compile(r"^(?:MZ-|PM\d|SM\d)", re.IGNORECASE), "Samsung"),
+    # Intel SSDs
+    (re.compile(r"^(?:SSDPE|SSDSC|DC\s*P\d|D3-S\d)", re.IGNORECASE), "Intel"),
+    # Intel NICs
+    (re.compile(r"^(?:X520-|X540-|X550-|X710-|X722-|XXV710-|I350-|E810-)", re.IGNORECASE), "Intel"),
+    # Dell
+    (re.compile(r"^POWEREDGE", re.IGNORECASE), "Dell"),
+    (re.compile(r"^R\d{3}[a-z]*$", re.IGNORECASE), "Dell"),
+    # Broadcom
+    (re.compile(r"^(?:BCM|N2)", re.IGNORECASE), "Broadcom"),
+    # AMD
+    (re.compile(r"^(?:EPYC|RYZEN|RADEON)\b", re.IGNORECASE), "AMD"),
+    (re.compile(r"^MI\d{2,3}", re.IGNORECASE), "AMD"),
+    # NVIDIA
+    (re.compile(r"^P\d{4}$", re.IGNORECASE), "NVIDIA"),
+    (re.compile(r"^RTX", re.IGNORECASE), "NVIDIA"),
+    (re.compile(r"^T\d{3,4}$", re.IGNORECASE), "NVIDIA"),
+    (re.compile(r"^A\d{3,4}$", re.IGNORECASE), "NVIDIA"),
+]
+
+# Category-specific rules (checked first for higher specificity)
+_CATEGORY_MANUFACTURER_RULES: list[tuple[str, re.Pattern[str], str]] = [
+    ("switch", re.compile(r"^(?:EX|QFX)", re.IGNORECASE), "Juniper"),
+    ("memory", re.compile(r"^MTA", re.IGNORECASE), "Micron"),
+    ("memory", re.compile(r"^(?:KTD-|KVR|KSM)", re.IGNORECASE), "Kingston"),
+]
+
+
+def _detect_manufacturer(model: str, category: str) -> str | None:
+    """Attempt to detect manufacturer from model name and category.
+
+    Returns the manufacturer name if a match is found, None otherwise.
+    """
+    # Check category-specific rules first (higher specificity)
+    cat_lower = category.lower()
+    for rule_cat, pattern, mfr in _CATEGORY_MANUFACTURER_RULES:
+        if cat_lower == rule_cat and pattern.search(model):
+            return mfr
+
+    # Check general rules
+    for pattern, mfr in _MANUFACTURER_RULES:
+        if pattern.search(model):
+            return mfr
+
+    return None
+
+
+def read_models(path: Path, show_warnings: bool = False) -> list[HardwareModel]:
     """Read hardware models from an Excel spreadsheet.
 
     Expects a sheet named 'Models' (or the first sheet) with columns:
@@ -92,6 +162,7 @@ def read_models(path: Path) -> list[HardwareModel]:
     headers = [str(h).strip().lower().replace(" ", "_") for h in raw_headers if h is not None]
 
     models: list[HardwareModel] = []
+    no_mfr_rows: list[tuple[int, str]] = []
     for row_num, row in enumerate(rows, start=2):
         values = dict(zip(headers, row))
         model_str = str(values.get("model") or "").strip()
@@ -100,7 +171,7 @@ def read_models(path: Path) -> list[HardwareModel]:
 
         manufacturer = str(values.get("manufacturer") or "").strip()
         if not manufacturer:
-            logger.warning("Row %d: model '%s' has no manufacturer", row_num, model_str)
+            no_mfr_rows.append((row_num, model_str))
 
         category = str(values.get("category") or "").strip()
         if not category:
@@ -117,6 +188,35 @@ def read_models(path: Path) -> list[HardwareModel]:
         )
 
     wb.close()
+
+    if no_mfr_rows:
+        if show_warnings:
+            for row_num, model_str in no_mfr_rows:
+                logger.warning("Row %d: model '%s' has no manufacturer", row_num, model_str)
+        else:
+            logger.warning(
+                "%d rows have no manufacturer (use --show-warnings to list)",
+                len(no_mfr_rows),
+            )
+
+    # Auto-detect manufacturers for models that have none
+    total_empty = sum(1 for m in models if not m.manufacturer)
+    detected_count = 0
+    for m in models:
+        if m.manufacturer:
+            continue
+        detected = _detect_manufacturer(m.model, m.category)
+        if detected:
+            m.manufacturer = detected
+            detected_count += 1
+            logger.info("Auto-detected manufacturer '%s' for model '%s'", detected, m.model)
+    if total_empty:
+        logger.info(
+            "Auto-detected manufacturers for %d of %d models without manufacturer",
+            detected_count,
+            total_empty,
+        )
+
     return models
 
 

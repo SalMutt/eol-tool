@@ -677,7 +677,7 @@ class TestCheckerPriority:
             )
 
         assert result.exit_code == 0, result.output
-        assert "Done:" in result.output
+        assert "done" in result.output
 
 
 # ===================================================================
