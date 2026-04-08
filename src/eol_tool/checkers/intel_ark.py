@@ -449,6 +449,10 @@ class IntelARKChecker(BaseChecker):
         bare_model = re.sub(r"\s+", " ", bare_model)
         term_words = {w.lower() for w in search_term.split() if len(w) > 2}
 
+        # Extract version from search term for mismatch detection
+        search_version_m = re.search(r"\bv(\d+)\b", search_term, re.IGNORECASE)
+        search_version = search_version_m.group(1) if search_version_m else None
+
         scored: list[tuple[int, str, str]] = []
         for href, text in candidates:
             text_lower = text.lower().replace("®", "").replace("™", "")
@@ -462,6 +466,13 @@ class IntelARKChecker(BaseChecker):
                 score = 10
             else:
                 score = 1
+
+            # Penalise version mismatches: if we want v6 but candidate has v3
+            if search_version and score >= 50:
+                cand_version_m = re.search(r"\bv(\d+)\b", text_lower)
+                if cand_version_m and cand_version_m.group(1) != search_version:
+                    score = 10
+
             scored.append((score, href, text))
 
         scored.sort(key=lambda t: t[0], reverse=True)
@@ -575,7 +586,18 @@ def _normalize_key(model_str: str, category: str = "cpu") -> str:
 
     # CPU / optic: strip INTEL/XEON prefix
     s = re.sub(r"^(?:INTEL\s+)?(?:XEON\s+)?", "", s, flags=re.IGNORECASE)
-    return s.strip()
+    s = s.strip()
+
+    # Strip packaging/distribution suffixes that pollute search
+    s = re.sub(
+        r"\b(?:RETAIL|OEM|TRAY|BOXED|BOX|BULK|REFURBISHED)\b",
+        "",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(r"\s+", " ", s).strip()
+
+    return s
 
 
 def _build_ark_query(model: str, category: str) -> str:
@@ -625,6 +647,15 @@ def _prepare_search_term(model_key: str, category: str = "cpu") -> str:
     # CPU: strip residual XEON/INTEL prefix
     s = re.sub(r"^(?:INTEL\s+)?(?:XEON\s+)?", "", s, flags=re.IGNORECASE).strip()
 
+    # Strip packaging/distribution suffixes
+    s = re.sub(
+        r"\b(?:RETAIL|OEM|TRAY|BOXED|BOX|BULK|REFURBISHED)\b",
+        "",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(r"\s+", " ", s).strip()
+
     # Scalable Xeons: "SILVER 4310", "GOLD 5412U", "PLATINUM 8380"
     scalable_wf = re.match(
         r"^(SILVER|GOLD|PLATINUM|BRONZE)\s*(\d{4,5}[A-Z]*)$", s, re.IGNORECASE
@@ -646,13 +677,13 @@ def _prepare_search_term(model_key: str, category: str = "cpu") -> str:
     if re.match(r"^E-2\d{3}[A-Z]*$", s, re.IGNORECASE):
         return f"Intel Xeon {s} Processor"
 
-    # E3/E5/E7 series: "E5-2683V4" -> "Intel Xeon E5-2683 v4 Processor"
-    if re.match(r"^E[357]-\d{4}[A-Z]*\d*$", s, re.IGNORECASE):
-        normalized = re.sub(r"V(\d+)$", r" v\1", s, flags=re.IGNORECASE)
+    # E3/E5/E7 series: "E5-2683V4" or "E3-1230 V6" -> "Intel Xeon E5-2683 v4 Processor"
+    if re.match(r"^E[357]-\d{4}\s*(?:V\d+)?$", s, re.IGNORECASE):
+        normalized = re.sub(r"\s*V(\d+)$", r" v\1", s, flags=re.IGNORECASE)
         return f"Intel Xeon {normalized} Processor"
 
     # Add space before version suffix for other models
-    s = re.sub(r"([A-Za-z0-9-])V(\d+)$", r"\1 v\2", s, flags=re.IGNORECASE)
+    s = re.sub(r"([A-Za-z0-9-])\s*V(\d+)$", r"\1 v\2", s, flags=re.IGNORECASE)
 
     return s
 

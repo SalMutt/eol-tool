@@ -26,8 +26,22 @@ logger = logging.getLogger(__name__)
 
 @click.group()
 @click.version_option(version=__version__)
-def cli():
+@click.option(
+    "--log-level",
+    type=click.Choice(["debug", "info", "warning", "error"], case_sensitive=False),
+    default="warning",
+    help="Set logging verbosity",
+)
+@click.option("-v", "--verbose", is_flag=True, help="Shortcut to set log level to INFO")
+def cli(log_level, verbose):
     """EOL Tool - Check end-of-life status for hardware models."""
+    if verbose and log_level == "warning":
+        log_level = "info"
+    logging.basicConfig(
+        level=getattr(logging, log_level.upper()),
+        format="%(levelname)s:%(name)s:%(message)s",
+        force=True,
+    )
 
 
 async def _run_with_progress(

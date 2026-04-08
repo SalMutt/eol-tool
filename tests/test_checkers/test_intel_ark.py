@@ -583,3 +583,200 @@ class TestStrategyChain:
         checker._try_ark_direct_search.assert_called_once()
         checker._try_intel_search.assert_called_once()
         checker._try_ark_search.assert_called_once()
+
+
+# ===================================================================
+# Mock helpers for _find_product_link tests
+# ===================================================================
+
+
+def _make_ark_link(href: str, text: str) -> AsyncMock:
+    """Create a mock link element with href, text, and visibility."""
+    el = AsyncMock()
+    el.is_visible = AsyncMock(return_value=True)
+    el.get_attribute = AsyncMock(return_value=href)
+    el.inner_text = AsyncMock(return_value=text)
+    return el
+
+
+def _make_search_page(links: list[AsyncMock]) -> AsyncMock:
+    """Build a mock page whose first matching selector returns *links*."""
+    page = AsyncMock()
+    first_call = True
+
+    async def _qsa(selector):
+        nonlocal first_call
+        if first_call and "products/sku" in selector:
+            first_call = False
+            return links
+        return []
+
+    page.query_selector_all = AsyncMock(side_effect=_qsa)
+    return page
+
+
+# ===================================================================
+# Relevance scoring in _find_product_link
+# ===================================================================
+
+
+class TestRelevanceScoring:
+    async def test_trademark_symbols_stripped_for_matching(self):
+        from eol_tool.checkers.intel_ark import IntelARKChecker
+
+        link = _make_ark_link(
+            "https://ark.intel.com/content/www/us/en/ark/products/sku/134857/specifications.html",
+            "Intel\u00ae Xeon\u00ae E-2136 Processor",
+        )
+        page = _make_search_page([link])
+        checker = IntelARKChecker()
+        result = await checker._find_product_link(page, "Intel Xeon E-2136 Processor")
+        assert result is not None
+        assert "/products/sku/134857/" in result
+
+    async def test_reverse_word_order_matches_via_bare_model(self):
+        from eol_tool.checkers.intel_ark import IntelARKChecker
+
+        link = _make_ark_link(
+            "https://ark.intel.com/content/www/us/en/ark/products/sku/91766/specifications.html",
+            "Intel\u00ae Xeon\u00ae Processor E5-2683 v4",
+        )
+        page = _make_search_page([link])
+        checker = IntelARKChecker()
+        result = await checker._find_product_link(
+            page, "Intel Xeon E5-2683 v4 Processor"
+        )
+        assert result is not None
+        assert "/products/sku/91766/" in result
+
+    async def test_scalable_xeon_matches(self):
+        from eol_tool.checkers.intel_ark import IntelARKChecker
+
+        link = _make_ark_link(
+            "https://ark.intel.com/content/www/us/en/ark/products/sku/215277/specifications.html",
+            "Intel\u00ae Xeon\u00ae Silver 4310 Processor",
+        )
+        page = _make_search_page([link])
+        checker = IntelARKChecker()
+        result = await checker._find_product_link(
+            page, "Intel Xeon Silver 4310 Processor"
+        )
+        assert result is not None
+        assert "/products/sku/" in result
+
+    async def test_irrelevant_results_rejected(self):
+        from eol_tool.checkers.intel_ark import IntelARKChecker
+
+        link = _make_ark_link(
+            "https://ark.intel.com/content/www/us/en/ark/products/sku/99999/specifications.html",
+            "Intel\u00ae Itanium\u00ae Processor 9500 Series",
+        )
+        page = _make_search_page([link])
+        checker = IntelARKChecker()
+        result = await checker._find_product_link(
+            page, "Intel Xeon E5-2683 v4 Processor"
+        )
+        assert result is None
+
+    async def test_version_suffix_distinguishes_models(self):
+        from eol_tool.checkers.intel_ark import IntelARKChecker
+
+        link_v4 = _make_ark_link(
+            "https://ark.intel.com/content/www/us/en/ark/products/sku/91766/specifications.html",
+            "Intel\u00ae Xeon\u00ae Processor E5-2683 v4",
+        )
+        link_v3 = _make_ark_link(
+            "https://ark.intel.com/content/www/us/en/ark/products/sku/81055/specifications.html",
+            "Intel\u00ae Xeon\u00ae Processor E5-2683 v3",
+        )
+        page = _make_search_page([link_v4, link_v3])
+        checker = IntelARKChecker()
+        result = await checker._find_product_link(
+            page, "Intel Xeon E5-2683 v4 Processor"
+        )
+        assert result is not None
+        assert "/sku/91766/" in result
+
+
+# ===================================================================
+# _extract_core_model
+# ===================================================================
+
+
+class TestExtractCoreModel:
+    def test_strips_intel_prefix(self):
+        from eol_tool.checkers.intel_ark import _extract_core_model
+
+        assert _extract_core_model("Intel Xeon E-2136 Processor") == "Xeon E-2136 Processor"
+
+    def test_strips_intel_ethernet(self):
+        from eol_tool.checkers.intel_ark import _extract_core_model
+
+        assert _extract_core_model("Intel Ethernet X520-DA2") == "X520-DA2"
+
+    def test_strips_intel_ssd(self):
+        from eol_tool.checkers.intel_ark import _extract_core_model
+
+        assert _extract_core_model("Intel SSD S3500") == "S3500"
+
+    def test_passthrough_bare_model(self):
+        from eol_tool.checkers.intel_ark import _extract_core_model
+
+        assert _extract_core_model("E5-2683V4") == "E5-2683V4"
+
+
+# ===================================================================
+# Packaging suffix stripping
+# ===================================================================
+
+
+class TestPackagingSuffixStripping:
+    def test_normalize_key_strips_retail(self):
+        from eol_tool.checkers.intel_ark import _normalize_key
+
+        result = _normalize_key("E3-1230 V6 RETAIL", "cpu")
+        assert "RETAIL" not in result.upper()
+        assert "E3-1230 V6" in result
+
+    def test_normalize_key_strips_oem(self):
+        from eol_tool.checkers.intel_ark import _normalize_key
+
+        result = _normalize_key("E5-2683V4 OEM", "cpu")
+        assert "OEM" not in result.upper()
+        assert "E5-2683V4" in result
+
+    def test_prepare_search_term_strips_retail(self):
+        from eol_tool.checkers.intel_ark import _normalize_key, _prepare_search_term
+
+        key = _normalize_key("E3-1230 V6 RETAIL", "cpu")
+        result = _prepare_search_term(key, "cpu")
+        assert result == "Intel Xeon E3-1230 v6 Processor"
+
+    async def test_version_mismatch_rejected(self):
+        from eol_tool.checkers.intel_ark import IntelARKChecker
+
+        link_v3 = _make_ark_link(
+            "https://ark.intel.com/content/www/us/en/ark/products/sku/75054/specifications.html",
+            "Intel\u00ae Xeon\u00ae Processor E3-1230 v3",
+        )
+        page = _make_search_page([link_v3])
+        checker = IntelARKChecker()
+        result = await checker._find_product_link(
+            page, "Intel Xeon E3-1230 v6 Processor"
+        )
+        assert result is None
+
+    async def test_version_match_accepted(self):
+        from eol_tool.checkers.intel_ark import IntelARKChecker
+
+        link_v6 = _make_ark_link(
+            "https://ark.intel.com/content/www/us/en/ark/products/sku/97478/specifications.html",
+            "Intel\u00ae Xeon\u00ae Processor E3-1230 v6",
+        )
+        page = _make_search_page([link_v6])
+        checker = IntelARKChecker()
+        result = await checker._find_product_link(
+            page, "Intel Xeon E3-1230 v6 Processor"
+        )
+        assert result is not None
+        assert "/sku/97478/" in result
