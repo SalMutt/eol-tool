@@ -178,6 +178,39 @@ def check(
         write_results(results, Path(output_path), filtered_rows=filtered_rows)
         click.echo(f"\nResults written to {output_path}")
 
+    # Save snapshot for diff comparison
+    try:
+        import json as _json
+        from datetime import datetime as _dt
+        from pathlib import Path as _P
+        _data_dir = _P(__file__).resolve().parent.parent.parent / "data"
+        _data_dir.mkdir(parents=True, exist_ok=True)
+        _last = _data_dir / "last_run.json"
+        _prev = _data_dir / "prev_run.json"
+        if _last.exists():
+            _last.replace(_prev)
+        _snapshot = {
+            "timestamp": _dt.now().isoformat(),
+            "results": [
+                {
+                    "model": r.model.model,
+                    "manufacturer": r.model.manufacturer,
+                    "status": r.status.value,
+                    "eol_date": str(r.eol_date) if r.eol_date else None,
+                    "risk_category": r.risk_category.value,
+                    "source": r.source_name,
+                }
+                for r in results
+            ],
+        }
+        _tmp = _last.with_suffix(".json.tmp")
+        with open(_tmp, "w") as _fh:
+            _json.dump(_snapshot, _fh)
+        _tmp.replace(_last)
+    except Exception:
+        pass  # Non-critical — don't break the CLI if snapshot fails
+
+
     # Print summary table
     risk_labels = ["Security", "Support", "Procurement", "Info"]
     hdr = (
