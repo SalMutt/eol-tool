@@ -134,6 +134,20 @@ class TestGenericBrandStripping:
         assert normalize_model("DELL POWEREDGE R730XD", "") == "DELL POWEREDGE R730XD"
 
 
+class TestASUSNormalization:
+    def test_strip_asus_prefix(self):
+        assert normalize_model("ASUS PRO WRX90E-SAGE SE", "ASUS") == "PRO WRX90E-SAGE SE"
+
+    def test_strip_asu_sv_prefix(self):
+        assert normalize_model("ASU SV RS300-E11-WOCPU012Z", "ASUS") == "RS300-E11-WOCPU012Z"
+
+    def test_strip_asu_prefix(self):
+        assert normalize_model("ASU RS700-E9-RS12", "ASUS") == "RS700-E9-RS12"
+
+    def test_already_clean(self):
+        assert normalize_model("RS520A-E12-RS24U", "ASUS") == "RS520A-E12-RS24U"
+
+
 class TestJuniperNormalization:
     def test_just_uppercase(self):
         assert normalize_model("ex4300-48t", "Juniper") == "EX4300-48T"

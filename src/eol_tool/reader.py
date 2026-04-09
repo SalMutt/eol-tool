@@ -137,7 +137,7 @@ _MANUFACTURER_RULES: list[tuple[re.Pattern[str], str]] = [
         r"^\d{4}\w?\s+(?:SILVER|GOLD|BRONZE|PLATINUM)", re.IGNORECASE,
     ), "Intel"),
     # Brocade switches
-    (re.compile(r"^(?:ACS|FLS|FCX|FI-)\d", re.IGNORECASE), "Brocade"),
+    (re.compile(r"^(?:ACS|FLS|FCX|FI-)\w", re.IGNORECASE), "Brocade"),
     # Transcend (TS part numbers)
     (re.compile(r"^TS\d+[A-Z]", re.IGNORECASE), "Transcend"),
     # SK Hynix memory (HMA, HMT, HMAA, etc.)
@@ -152,7 +152,7 @@ _MANUFACTURER_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bCORSAIR\b", re.IGNORECASE), "Corsair"),
     (re.compile(r"\b(?:SK\s+)?HYNIX\b", re.IGNORECASE), "SK Hynix"),
     (re.compile(r"\bSANDISK\b", re.IGNORECASE), "SanDisk"),
-    (re.compile(r"\bASROCK\b", re.IGNORECASE), "AsRock"),
+    (re.compile(r"\bASROCK\b", re.IGNORECASE), "ASRock"),
     (re.compile(r"\bTOSHIBA\b", re.IGNORECASE), "Toshiba"),
     (re.compile(r"\bKIOXIA\b", re.IGNORECASE), "Kioxia"),
     (re.compile(r"\bGIGABYTE\b", re.IGNORECASE), "Gigabyte"),
@@ -188,6 +188,12 @@ _MANUFACTURER_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^ASU\b", re.IGNORECASE), "ASUS"),
     (re.compile(r"^SM\s", re.IGNORECASE), "Supermicro"),
     (re.compile(r"^SMC\b", re.IGNORECASE), "Supermicro"),
+    (re.compile(r"^MSI\b", re.IGNORECASE), "MSI"),
+    (re.compile(r"^AXIOM\b", re.IGNORECASE), "Axiom"),
+    (re.compile(r"^A-TECH\b", re.IGNORECASE), "A-Tech"),
+    (re.compile(r"^ASR\b", re.IGNORECASE), "ASRock"),
+    (re.compile(r"^MNT[\s-]", re.IGNORECASE), "Juniper"),
+    (re.compile(r"^EDGEVANA\b", re.IGNORECASE), "Edgevana"),
 ]
 
 # Category-specific rules (checked first for higher specificity)
@@ -323,6 +329,9 @@ def read_models(path: Path, show_warnings: bool = False) -> list[HardwareModel]:
         detected = _detect_manufacturer(m.model, m.category)
         if detected:
             m.manufacturer = detected
+            # Re-normalize with the detected manufacturer so brand-specific
+            # rules (prefix stripping, etc.) are applied.
+            m.model = normalize_model(m.model, detected)
             detected_count += 1
             logger.info("Auto-detected manufacturer '%s' for model '%s'", detected, m.model)
     if total_empty:

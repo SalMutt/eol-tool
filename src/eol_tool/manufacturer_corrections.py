@@ -23,6 +23,7 @@ _CORRECTIONS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"VCGGTX1080", re.IGNORECASE), "PNY"),
     (re.compile(r"TOS THNSNH|THNSNH", re.IGNORECASE), "Toshiba"),
     (re.compile(r"S8016AGM2NR", re.IGNORECASE), "ASRock"),
+    (re.compile(r"\bTS\d+DSTMM\d", re.IGNORECASE), "Transcend"),
 ]
 
 

@@ -44,6 +44,8 @@ def normalize_model(raw: str, manufacturer: str = "") -> str:
         text = _normalize_samsung(text)
     elif mfr == "SUPERMICRO":
         text = _normalize_supermicro(text)
+    elif mfr == "ASUS":
+        text = _normalize_asus(text)
     elif mfr and text.startswith(mfr + " "):
         # Generic brand prefix removal for other manufacturers
         text = text[len(mfr):].strip()
@@ -110,3 +112,8 @@ def _normalize_samsung(text: str) -> str:
 def _normalize_supermicro(text: str) -> str:
     """Supermicro normalization: strip SM prefix."""
     return re.sub(r"^SM\s+", "", text)
+
+
+def _normalize_asus(text: str) -> str:
+    """ASUS normalization: strip ASUS, ASU SV, ASU prefixes."""
+    return re.sub(r"^(?:ASUS\s+|ASU\s+SV\s+|ASU\s+)", "", text)

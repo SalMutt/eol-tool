@@ -51,6 +51,22 @@ _ENT_CAPACITY_OLD_RE = re.compile(
     r"\bST(?:1|2|3|4|5|6|8)\d{3,4}NM\d{3}[0-9]", re.IGNORECASE,
 )
 
+# BarraCuda Desktop drives: ST*DM* models
+_BARRACUDA_RE = re.compile(r"\bST\d+DM\d", re.IGNORECASE)
+
+# IronWolf NAS drives: ST*VN* or ST*NT* (IronWolf Pro) models
+_IRONWOLF_RE = re.compile(r"\bST\d+(?:VN|NT)\d", re.IGNORECASE)
+
+# ── Keyword patterns for serial-fragment models ────────────────────
+_ENT_KEYWORD_RE = re.compile(r"\bENT(?:ERPRISE)?\b|\bEXOS\b", re.IGNORECASE)
+_NAS_KEYWORD_RE = re.compile(r"\bNAS\b|\bIRONWOLF\b", re.IGNORECASE)
+_DESKTOP_KEYWORD_RE = re.compile(r"\bDESKTOP\b|\bBARRACUDA\b|\bTERASCALE\b", re.IGNORECASE)
+
+# Bare Seagate: just the brand name optionally followed by a serial fragment
+_BARE_SEAGATE_RE = re.compile(
+    r"^SEAGATE\s*(?:-\s*[A-Z0-9]+)?$", re.IGNORECASE,
+)
+
 
 def _extract_capacity_tb(model_str: str) -> float | None:
     """Extract drive capacity in TB from a model string."""
@@ -186,6 +202,61 @@ def _classify_by_product_line(
             70,
         )
 
+    # BarraCuda Desktop (ST*DM* models) — consumer drives, EOL for datacenter
+    if _BARRACUDA_RE.search(raw):
+        return (
+            EOLStatus.EOL,
+            RiskCategory.PROCUREMENT,
+            "Seagate BarraCuda Desktop drive - consumer, EOL for datacenter use",
+            EOLReason.PRODUCT_DISCONTINUED,
+            60,
+        )
+
+    # IronWolf NAS (ST*VN* models)
+    if _IRONWOLF_RE.search(raw):
+        return (
+            EOLStatus.ACTIVE,
+            RiskCategory.INFORMATIONAL,
+            "Seagate IronWolf NAS drive - active product line",
+            EOLReason.NONE,
+            60,
+        )
+
+    return None
+
+
+def _classify_by_keyword(
+    text: str,
+) -> tuple[EOLStatus, RiskCategory, str, EOLReason, int] | None:
+    """Classify Seagate drives by product-line keywords in any available text.
+
+    Used for serial-fragment models where the actual model number is missing
+    but product-line keywords (ENT, NAS, DESKTOP) survive in the original text.
+    """
+    if _ENT_KEYWORD_RE.search(text):
+        return (
+            EOLStatus.EOL,
+            RiskCategory.PROCUREMENT,
+            "Seagate Enterprise drive - model number not available, assumed EOL due to age",
+            EOLReason.PRODUCT_DISCONTINUED,
+            50,
+        )
+    if _NAS_KEYWORD_RE.search(text):
+        return (
+            EOLStatus.ACTIVE,
+            RiskCategory.INFORMATIONAL,
+            "Seagate NAS/IronWolf drive - model number not available, product line active",
+            EOLReason.NONE,
+            50,
+        )
+    if _DESKTOP_KEYWORD_RE.search(text):
+        return (
+            EOLStatus.EOL,
+            RiskCategory.PROCUREMENT,
+            "Seagate Desktop/BarraCuda drive - consumer, EOL for datacenter use",
+            EOLReason.PRODUCT_DISCONTINUED,
+            50,
+        )
     return None
 
 
@@ -219,7 +290,7 @@ class SeagateChecker(BaseChecker):
                 date_source="none",
             )
 
-        # Try product-line classification
+        # Try product-line classification (model number patterns)
         pl = _classify_by_product_line(raw)
         if pl is not None:
             status, risk, notes, eol_reason, confidence = pl
@@ -232,6 +303,38 @@ class SeagateChecker(BaseChecker):
                 notes=notes,
                 eol_reason=eol_reason,
                 risk_category=risk,
+                date_source="none",
+            )
+
+        # Try keyword-based classification from all available text
+        # (original_item may contain ENT/NAS/DESKTOP stripped during normalization)
+        all_text = f"{model.model} {model.original_item or ''}"
+        kw = _classify_by_keyword(all_text)
+        if kw is not None:
+            status, risk, notes, eol_reason, confidence = kw
+            return EOLResult(
+                model=model,
+                status=status,
+                checked_at=datetime.now(),
+                source_name="seagate-product-line-rules",
+                confidence=confidence,
+                notes=notes,
+                eol_reason=eol_reason,
+                risk_category=risk,
+                date_source="none",
+            )
+
+        # Bare Seagate with serial fragment: no model info, assume EOL due to age
+        if _BARE_SEAGATE_RE.match(model.model.strip()):
+            return EOLResult(
+                model=model,
+                status=EOLStatus.EOL,
+                checked_at=datetime.now(),
+                source_name="seagate-product-line-rules",
+                confidence=30,
+                notes="Seagate drive - insufficient model info, assumed EOL due to age",
+                eol_reason=EOLReason.PRODUCT_DISCONTINUED,
+                risk_category=RiskCategory.PROCUREMENT,
                 date_source="none",
             )
 

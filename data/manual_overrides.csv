@@ -179,3 +179,23 @@ OPTIMA,PNY,eol,product_discontinued,procurement,,,,pny-optima-sata-ssd-discontin
 HALF-SLIM SSD,SanDisk,eol,product_discontinued,procurement,,,,sandisk-half-slim-form-factor-legacy-blade-server-storage
 TRAN SSD225S,Transcend,active,none,none,,,,transcend-ssd225s-sata-ssd-current-product
 GREEN SATA3 2.5,WD,active,none,none,,,,wd-green-sata-ssd-current-product-line
+PRO WRX90E-SAGE SE,ASUS,active,none,none,,,,ASUS-PRO-WRX90E-SAGE-SE-workstation-motherboard-current-gen
+RS720-E10-RS12,ASUS,active,manual_override,informational,,,,ASUS-RS720-E10-Intel-Ice-Lake-Xeon-2U-server
+SYS- AS-1014S-WTRT,Supermicro,eol,product_discontinued,support,,,,Supermicro-AS-1014S-AMD-EPYC-server-previous-gen
+AS-1014S-WTRT,Supermicro,eol,product_discontinued,support,,,,Supermicro-AS-1014S-AMD-EPYC-server-previous-gen
+LON SERVER UK-AMD 7302P,AMD,eol,product_discontinued,support,,,,AMD-EPYC-7302P-Rome-Zen2-2nd-gen-server
+DUAL 1GBE ETHERNET,Intel,active,manual_override,informational,,,,generic-Intel-dual-1GbE-NIC-insufficient-model-info
+AIF SP-FXP-CORE_X0002_F10K-STD- RNW,Juniper,unknown,none,informational,,,,juniper-software-license-item-not-hardware
+SPC621D8-2L2T,Supermicro,active,manual_override,informational,,,,Supermicro-SPC621D8-server-board-Intel-C621A-chipset
+DUP 64GB KSM48R40BD4TMM-64HMR,,active,manual_override,none,,,,Kingston-DDR5-4800-64GB-RDIMM-duplicate-entry
+DUAL FIBER DWDM OADM 4CH 21-24,,active,manual_override,informational,,,,DWDM-passive-optical-component-commodity
+DUP 4TB SAM 990 PRO M.2,,active,manual_override,none,,,,Samsung-990-PRO-4TB-NVMe-SSD-duplicate-entry
+EDGEVANA SERVER UK-4210,,active,manual_override,informational,,,,server-with-Xeon-Silver-4210-Cascade-Lake
+SERVER UK-4210,Edgevana,active,manual_override,informational,,,,server-with-Xeon-Silver-4210-Cascade-Lake
+TOKYO SERVER UK-4216,,active,manual_override,informational,,,,server-with-Xeon-Silver-4216-Cascade-Lake
+1U4LW-B650/2L2T,ASRock,active,manual_override,informational,,,,ASRock-Rack-1U4LW-B650-AMD-AM5-server-current
+MNT SP-FXP-CORE_X0002_F10K RNW-T1,Juniper,active,manual_override,informational,,,,juniper-support-contract-not-hardware
+FI-SX1600,Brocade,eol,product_discontinued,security,,,,Brocade-ServerIron-SX1600-legacy-switch-EOL
+SEA ST16000NT001,Seagate,active,none,none,,,,Seagate-IronWolf-Pro-16TB-NAS-drive-current
+SEAGATE TERASCALE HDD 3.5",Seagate,eol,product_discontinued,procurement,,,,Seagate-Terascale-surveillance-HDD-EOL-replaced-by-SkyHawk
+TS16DSTMM1600,Transcend,active,manual_override,informational,,,,Transcend-DDR3-1600-SODIMM-misclassified-as-Seagate

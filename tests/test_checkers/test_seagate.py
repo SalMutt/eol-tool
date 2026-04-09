@@ -4,6 +4,7 @@ import pytest
 
 from eol_tool.checkers.seagate import (
     SeagateChecker,
+    _classify_by_keyword,
     _classify_by_product_line,
     _extract_capacity_tb,
 )
@@ -125,7 +126,7 @@ class TestLargeCapacityActive:
 
 class TestUnknown:
     async def test_no_capacity_returns_unknown(self, checker):
-        r = await checker.check(_hw("SEAGATE ENT - MYSTERY"))
+        r = await checker.check(_hw("SEAGATE MYSTERY DRIVE"))
         assert r.status == EOLStatus.UNKNOWN
         assert r.confidence == 50
         assert "not-classified" in r.notes
@@ -207,6 +208,69 @@ class TestNytroClassification:
         assert r.status == EOLStatus.ACTIVE
 
 
+class TestBarraCudaEOL:
+    async def test_barracuda_dm_model_eol(self, checker):
+        r = await checker.check(_hw("ST2000DM008"))
+        assert r.status == EOLStatus.EOL
+        assert "BarraCuda" in r.notes
+
+    async def test_barracuda_keyword_eol(self, checker):
+        hw = _hw("SEAGATE - 0033")
+        hw.original_item = "HARD DRIVES:USED:Seagate Desktop - 0033"
+        r = await checker.check(hw)
+        assert r.status == EOLStatus.EOL
+        assert "Desktop" in r.notes or "BarraCuda" in r.notes
+
+
+class TestIronWolfActive:
+    async def test_ironwolf_vn_model_active(self, checker):
+        r = await checker.check(_hw("ST8000VN004"))
+        assert r.status == EOLStatus.ACTIVE
+        assert "IronWolf" in r.notes
+
+    async def test_ironwolf_keyword_active(self, checker):
+        hw = _hw("SEAGATE - 0044")
+        hw.original_item = "HARD DRIVES:USED:Seagate NAS - 0044"
+        r = await checker.check(hw)
+        assert r.status == EOLStatus.ACTIVE
+        assert "NAS" in r.notes or "IronWolf" in r.notes
+
+
+class TestKeywordClassification:
+    async def test_ent_keyword_eol(self, checker):
+        hw = _hw("SEAGATE - 0016")
+        hw.original_item = "Seagate Ent - 0016"
+        r = await checker.check(hw)
+        assert r.status == EOLStatus.EOL
+        assert r.confidence == 50
+        assert "Enterprise" in r.notes
+
+    async def test_enterprise_keyword_eol(self, checker):
+        hw = _hw("SEAGATE - 0055")
+        hw.original_item = "Seagate Enterprise - 0055"
+        r = await checker.check(hw)
+        assert r.status == EOLStatus.EOL
+
+    async def test_exos_keyword_eol(self, checker):
+        hw = _hw("SEAGATE - 0099")
+        hw.original_item = "Seagate Exos - 0099"
+        r = await checker.check(hw)
+        assert r.status == EOLStatus.EOL
+
+
+class TestBareSeagateFallback:
+    async def test_bare_seagate_eol(self, checker):
+        r = await checker.check(_hw("SEAGATE"))
+        assert r.status == EOLStatus.EOL
+        assert r.confidence == 30
+        assert "insufficient model info" in r.notes or "assumed EOL" in r.notes
+
+    async def test_bare_seagate_with_serial(self, checker):
+        r = await checker.check(_hw("SEAGATE - N0004"))
+        assert r.status == EOLStatus.EOL
+        assert r.confidence == 30
+
+
 class TestProductLineFunction:
     def test_hgst_returns_eol(self):
         result = _classify_by_product_line("HGST HUS726T4TALA6L4")
@@ -226,6 +290,37 @@ class TestProductLineFunction:
         result = _classify_by_product_line("ST16000NM001G")
         assert result is not None
         assert result[0] == EOLStatus.ACTIVE
+
+    def test_barracuda_dm_returns_eol(self):
+        result = _classify_by_product_line("ST2000DM008")
+        assert result is not None
+        assert result[0] == EOLStatus.EOL
+
+    def test_ironwolf_vn_returns_active(self):
+        result = _classify_by_product_line("ST8000VN004")
+        assert result is not None
+        assert result[0] == EOLStatus.ACTIVE
+
+
+class TestKeywordFunction:
+    def test_ent_keyword(self):
+        result = _classify_by_keyword("SEAGATE ENT - 0016")
+        assert result is not None
+        assert result[0] == EOLStatus.EOL
+
+    def test_nas_keyword(self):
+        result = _classify_by_keyword("Seagate NAS - 0044")
+        assert result is not None
+        assert result[0] == EOLStatus.ACTIVE
+
+    def test_desktop_keyword(self):
+        result = _classify_by_keyword("Seagate Desktop - 0033")
+        assert result is not None
+        assert result[0] == EOLStatus.EOL
+
+    def test_no_keyword_returns_none(self):
+        result = _classify_by_keyword("SEAGATE - N0004")
+        assert result is None
 
 
 # ===================================================================

@@ -9,6 +9,12 @@ from .checker import BaseChecker
 _registry: dict[str, list[type[BaseChecker]]] = {}
 _discovered = False
 
+# Route models from one manufacturer to another manufacturer's checkers.
+# Key: alias (lowercase), Value: target manufacturer (lowercase).
+_MANUFACTURER_ALIASES: dict[str, str] = {
+    "crucial": "micron",
+}
+
 
 def _discover_checkers() -> None:
     """Scan the checkers package for BaseChecker subclasses."""
@@ -37,15 +43,29 @@ def get_checker(manufacturer: str) -> type[BaseChecker] | None:
     """Get the first checker class by manufacturer name (backward compat)."""
     if not _discovered:
         _discover_checkers()
-    entries = _registry.get(manufacturer.lower())
-    return entries[0] if entries else None
+    key = manufacturer.lower()
+    entries = _registry.get(key)
+    if entries:
+        return entries[0]
+    alias_key = _MANUFACTURER_ALIASES.get(key)
+    if alias_key:
+        entries = _registry.get(alias_key)
+        return entries[0] if entries else None
+    return None
 
 
 def get_checkers(manufacturer: str) -> list[type[BaseChecker]]:
     """Get all checker classes registered for a manufacturer."""
     if not _discovered:
         _discover_checkers()
-    return list(_registry.get(manufacturer.lower(), []))
+    key = manufacturer.lower()
+    result = list(_registry.get(key, []))
+    alias_key = _MANUFACTURER_ALIASES.get(key)
+    if alias_key and alias_key in _registry:
+        for checker in _registry[alias_key]:
+            if checker not in result:
+                result.append(checker)
+    return result
 
 
 def list_checkers() -> dict[str, type[BaseChecker]]:

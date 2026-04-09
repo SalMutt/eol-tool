@@ -298,7 +298,7 @@ class TestBrandSubstringDetection:
         assert _detect_manufacturer("SANDISK ULTRA 3D", "ssd") == "SanDisk"
 
     def test_asrock_brand_name(self):
-        assert _detect_manufacturer("ASROCK X570D4U", "server-board") == "AsRock"
+        assert _detect_manufacturer("ASROCK X570D4U", "server-board") == "ASRock"
 
     def test_toshiba_brand_name(self):
         assert _detect_manufacturer("TOSHIBA MG07ACA12TE", "drive") == "Toshiba"

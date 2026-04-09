@@ -45,6 +45,12 @@ _DRAM_ACTIVE_PREFIXES = [
 # ── Crucial DDR4 substring patterns (ACTIVE) ────────────────────────
 _CRUCIAL_DDR4_CODES = ["RFD4", "WFD8", "WFS8", "XFD8", "DFD8"]
 
+# Crucial DDR4 speed code pattern: type code (3 letters) followed by 4-digit speed
+# e.g. CT16G4DFD8213 → DFD + 8213 (DDR4-2133)
+_CRUCIAL_SPEED_RE = re.compile(
+    r"(?:DFD|RFD|XFD|WFD|WFS|SFD)(8\d{3})",
+)
+
 _MICRON_PREFIX_RE = re.compile(
     r"^(?:MICRON\s+|CRUCIAL\s+|CRU\s+)",
     re.IGNORECASE,
@@ -138,7 +144,36 @@ class MicronChecker(BaseChecker):
                 eol_reason=EOLReason.NONE,
                 risk_category=RiskCategory.NONE,
             )
-        # Crucial DDR4
+        # Crucial DDR4 speed-based classification
+        # Part numbers encode speed after 3-letter type code:
+        #   8213=DDR4-2133, 824x=DDR4-2400 → EOL (old speeds)
+        #   8266+=DDR4-2666+ → current
+        speed_match = _CRUCIAL_SPEED_RE.search(normalized)
+        if speed_match:
+            speed_code = speed_match.group(1)
+            if speed_code.startswith("821") or speed_code.startswith("824"):
+                return EOLResult(
+                    model=model,
+                    status=EOLStatus.EOL,
+                    checked_at=datetime.now(),
+                    source_name="micron-product-rules",
+                    confidence=65,
+                    notes=f"Crucial DDR4 (speed code {speed_code}) - older generation, EOL",
+                    eol_reason=EOLReason.TECHNOLOGY_GENERATION,
+                    risk_category=RiskCategory.PROCUREMENT,
+                    date_source="none",
+                )
+            return EOLResult(
+                model=model,
+                status=EOLStatus.ACTIVE,
+                checked_at=datetime.now(),
+                source_name="micron-product-rules",
+                confidence=65,
+                notes="Crucial DDR4 memory - current",
+                eol_reason=EOLReason.NONE,
+                risk_category=RiskCategory.NONE,
+            )
+        # Crucial DDR4 by type code substring (fallback for non-standard formats)
         for code in _CRUCIAL_DDR4_CODES:
             if code in normalized:
                 return EOLResult(
@@ -151,13 +186,16 @@ class MicronChecker(BaseChecker):
                     eol_reason=EOLReason.NONE,
                     risk_category=RiskCategory.NONE,
                 )
+        # Any CT-prefix model: classify as Crucial memory/SSD, low confidence
         return EOLResult(
             model=model,
-            status=EOLStatus.UNKNOWN,
+            status=EOLStatus.ACTIVE,
             checked_at=datetime.now(),
             source_name="micron-product-rules",
-            confidence=50,
-            notes="crucial-model-not-classified",
+            confidence=40,
+            notes="Crucial product - CT-prefix recognized but specific model not classified",
+            eol_reason=EOLReason.NONE,
+            risk_category=RiskCategory.INFORMATIONAL,
         )
 
     @staticmethod
