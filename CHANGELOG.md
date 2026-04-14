@@ -1,5 +1,37 @@
 # Changelog
 
+## v2.3.0 (2026-04-14)
+
+### Added
+- **13 new manufacturer checkers:** Adaptec, ADATA, A-Tech, Axiom, Corsair, EVGA, Hitachi, HPE, IBM, Mellanox, MSI, SanDisk, Zotac
+- **Generation dates database:** ~700 product-line date patterns in `data/generation_dates.csv` covering CPUs, SSDs, HDDs, NICs, and GPUs
+- **Ordering code decoding** for Intel, AMD, Samsung, Micron, and Kingston part numbers
+- **DDR speed-bin date matching** from memory part numbers (DDR3/DDR4/DDR5)
+- **Manufacturer auto-detection** from model strings when manufacturer column is missing
+- **QuickBooks import** with automatic category/condition prefix stripping
+- **Item string retry:** if normalized model yields no result, the original item string is retried
+- **Lifecycle estimation:** approximate EOL from release dates using category-specific product lifecycles
+- Expanded AMD, Arista, Broadcom, Dell, Intel, KIOXIA, Micron, Mushkin, NVIDIA, PNY, Samsung, Seagate, Solidigm, Supermicro, Transcend checkers with product-line generation rules
+- ~200 manual overrides for white-label optics, passive components, and edge-case models
+
+### Fixed
+- Junk filter false positives on valid models with category prefixes
+- Manufacturer auto-detection for models with `CATEGORY:CONDITION:` prefixes
+- CLI snapshot writes `last_run.json` after check completes (not before)
+- Post-processing contradiction correction for models with dates but wrong status
+
+### Changed
+- Classification pipeline expanded with three-tier date resolution: manufacturer-confirmed → community database → generation estimates
+- Date source field now distinguishes `manufacturer_confirmed`, `community_database`, and `generation_estimate`
+- Status derivation uses EOL dates to correct contradictory status values
+- Manual overrides file expanded from ~30 to ~200 entries
+
+### Stats
+- 39 manufacturer-specific checkers (up from 25 in v2.2.0)
+- 100% classification rate — zero unknowns on tested inventory
+- ~700 generation date patterns
+- 1,574 tests passing, ruff clean
+
 ## v2.2.0 (2026-04-08)
 
 ### Added
