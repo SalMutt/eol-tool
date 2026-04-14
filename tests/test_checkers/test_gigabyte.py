@@ -27,9 +27,10 @@ class TestProducts:
         r = await checker.check(_hw("MC13-LE0"))
         assert r.status == EOLStatus.ACTIVE
 
-    async def test_generic_ssd_unknown(self, checker):
+    async def test_generic_ssd_active(self, checker):
         r = await checker.check(_hw("240GB GIGABYTE", category="ssd"))
-        assert r.status == EOLStatus.UNKNOWN
+        assert r.status == EOLStatus.ACTIVE
+        assert r.confidence == 30
 
 
 class TestRegistration:

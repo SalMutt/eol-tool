@@ -1,8 +1,9 @@
 """Gigabyte EOL checker for server boards and SSDs.
 
-Only 3 models in the dataset.  No HTTP calls needed.
+Only a few models in the dataset.  No HTTP calls needed.
 """
 
+import re
 from datetime import datetime
 
 from ..checker import BaseChecker
@@ -26,6 +27,10 @@ class GigabyteChecker(BaseChecker):
 
     async def check(self, model: HardwareModel) -> EOLResult:
         normalized = model.model.strip().upper()
+        # Strip capacity prefix like "240GB "
+        normalized = re.sub(r"^\d+(?:\.\d+)?(?:TB|GB)\s+", "", normalized)
+        # Strip "GIGABYTE " prefix
+        normalized = re.sub(r"^GIGABYTE\s+", "", normalized)
 
         for key, status, risk, notes in _PRODUCTS:
             if key in normalized:
@@ -39,6 +44,20 @@ class GigabyteChecker(BaseChecker):
                     eol_reason=EOLReason.NONE,
                     risk_category=risk,
                 )
+
+        # Generic Gigabyte SSD (capacity-only description)
+        cat = model.category.lower()
+        if cat in ("ssd", "drive") or not normalized:
+            return EOLResult(
+                model=model,
+                status=EOLStatus.ACTIVE,
+                checked_at=datetime.now(),
+                source_name="gigabyte-static-lookup",
+                confidence=30,
+                notes="generic-gigabyte-ssd",
+                eol_reason=EOLReason.NONE,
+                risk_category=RiskCategory.INFORMATIONAL,
+            )
 
         return EOLResult(
             model=model,

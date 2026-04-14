@@ -1,15 +1,76 @@
 """Micron EOL checker using product line and part number rules.
 
-Covers enterprise SSDs, server DRAM, and Crucial-branded products.
+Covers enterprise SSDs, server DRAM, Crucial-branded products, and MPN
+ordering codes (MTFDDAK*, MTFDKC*, etc.).
 Classification by SSD series number, DRAM prefix, or Crucial part pattern.
 No HTTP calls needed.
 """
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 from ..checker import BaseChecker
 from ..models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategory
+
+# ── Memory speed-code → release date mapping ──────────────────────────
+_MICRON_SPEED_DATES: dict[str, date] = {
+    "1G4": date(2009, 6, 1),     # DDR3-1333
+    "1G6": date(2011, 1, 1),     # DDR3-1600
+    "2G1": date(2014, 9, 1),     # DDR4-2133
+    "2G3": date(2016, 3, 1),     # DDR4-2400
+    "2G6": date(2017, 7, 1),     # DDR4-2666
+    "2G9": date(2019, 4, 1),     # DDR4-2933
+    "3G2": date(2020, 3, 1),     # DDR4-3200
+    "3G3": date(2020, 6, 1),     # DDR4-3200 (higher bin)
+}
+_MICRON_SPEED_RE = re.compile(r"-(\dG\d)")
+
+# ── SSD ordering code rules (MPN prefix, checked before series names) ─
+# (regex, status, confidence, notes)
+_SSD_ORDERING_RULES: list[tuple[re.Pattern, EOLStatus, int, str]] = [
+    # MTFDDAK*TDC* = 5100 series → EOL
+    (re.compile(r"^MTFDDAK.*TDC"), EOLStatus.EOL, 75,
+     "Micron 5100 series SATA SSD (MTFDDAK/TDC ordering code)"),
+    # MTFDDAK*TDS* = 5200 series → EOL
+    (re.compile(r"^MTFDDAK.*TDS"), EOLStatus.EOL, 75,
+     "Micron 5200 series SATA SSD (MTFDDAK/TDS ordering code)"),
+    # MTFDDAK*TGA* = 5300 series → active
+    (re.compile(r"^MTFDDAK.*TGA"), EOLStatus.ACTIVE, 75,
+     "Micron 5300 series SATA SSD (MTFDDAK/TGA ordering code)"),
+    # MTFDDAK*QDE* = 5300 QLC → active
+    (re.compile(r"^MTFDDAK.*QDE"), EOLStatus.ACTIVE, 75,
+     "Micron 5300 QLC SATA SSD (MTFDDAK/QDE ordering code)"),
+    # MTFDDAK*MBP* = M500/M600 → EOL
+    (re.compile(r"^MTFDDAK.*MBP"), EOLStatus.EOL, 75,
+     "Micron M500/M600 SATA SSD (MTFDDAK/MBP ordering code)"),
+    # MTFDDAK catch-all → active (newer 5400 series likely)
+    (re.compile(r"^MTFDDAK"), EOLStatus.ACTIVE, 55,
+     "Micron SATA SSD (MTFDDAK ordering code)"),
+    # MTFDKC*TFR/TFC = 7300/7450 → active
+    (re.compile(r"^MTFDKC.*TF[RC]"), EOLStatus.ACTIVE, 75,
+     "Micron 7300/7450 NVMe SSD (MTFDKC ordering code)"),
+    # MTFDKC*TGP/TGR/TGH = 7450 → active
+    (re.compile(r"^MTFDKC.*TG[PRH]"), EOLStatus.ACTIVE, 75,
+     "Micron 7450 NVMe SSD (MTFDKC ordering code)"),
+    # MTFDKC catch-all → active
+    (re.compile(r"^MTFDKC"), EOLStatus.ACTIVE, 60,
+     "Micron enterprise NVMe SSD (MTFDKC ordering code)"),
+    # MTFDHB* = enterprise NVMe → active
+    (re.compile(r"^MTFDHB"), EOLStatus.ACTIVE, 70,
+     "Micron enterprise NVMe SSD (MTFDHB ordering code)"),
+    # MTFDHAL/MTFDLAL = 9400 series → active
+    (re.compile(r"^MTFD[HL]AL"), EOLStatus.ACTIVE, 75,
+     "Micron 9400 series NVMe SSD (ordering code)"),
+    # MTFDKBA* = consumer NVMe → active
+    (re.compile(r"^MTFDKBA"), EOLStatus.ACTIVE, 70,
+     "Micron consumer NVMe SSD (MTFDKBA ordering code)"),
+    # MTFDDAV* = consumer SATA M.2 → active
+    (re.compile(r"^MTFDDAV"), EOLStatus.ACTIVE, 70,
+     "Micron consumer SATA M.2 SSD (MTFDDAV ordering code)"),
+    # MTFDKBG* = 7300/7400 M.2 → active
+    (re.compile(r"^MTFDKBG"), EOLStatus.ACTIVE, 70,
+     "Micron 7300/7400 M.2 NVMe SSD (MTFDKBG ordering code)"),
+]
 
 # ── SSD product line lookup (substring match) ────────────────────────
 # Longer keys first to avoid partial matches (e.g. "5210" before "52")
@@ -48,11 +109,11 @@ _CRUCIAL_DDR4_CODES = ["RFD4", "WFD8", "WFS8", "XFD8", "DFD8"]
 # Crucial DDR4 speed code pattern: type code (3 letters) followed by 4-digit speed
 # e.g. CT16G4DFD8213 → DFD + 8213 (DDR4-2133)
 _CRUCIAL_SPEED_RE = re.compile(
-    r"(?:DFD|RFD|XFD|WFD|WFS|SFD)(8\d{3})",
+    r"(?:DFD|RFD|XFD|WFD|WFS|SFD)(8\d{2,3})",
 )
 
 _MICRON_PREFIX_RE = re.compile(
-    r"^(?:MICRON\s+|CRUCIAL\s+|CRU\s+)",
+    r"^(?:MICRON\s+|MIC\s+|CRUCIAL\s+|CRU\s+)",
     re.IGNORECASE,
 )
 
@@ -67,38 +128,22 @@ class MicronChecker(BaseChecker):
 
     async def check(self, model: HardwareModel) -> EOLResult:
         normalized = self._normalize(model.model)
+        result = self._classify(model, normalized)
+        if result:
+            return result
 
-        # SSD product line match
-        for key, status, notes in _SSD_RULES:
-            if key in normalized:
-                return self._make_ssd_result(model, status, notes)
-
-        # DRAM prefix match — DDR3 EOL
-        for prefix in _DRAM_EOL_PREFIXES:
-            if normalized.startswith(prefix):
-                return self._make_dram_result(
-                    model, EOLStatus.EOL,
-                    RiskCategory.PROCUREMENT,
-                    f"Micron DDR3 {prefix} - end of life",
-                )
-
-        # DRAM prefix match — DDR4/DDR5 ACTIVE
-        for prefix in _DRAM_ACTIVE_PREFIXES:
-            if normalized.startswith(prefix):
-                return self._make_dram_result(
-                    model, EOLStatus.ACTIVE,
-                    RiskCategory.NONE,
-                    f"Micron DDR4/DDR5 {prefix} - current",
-                )
-
-        # Crucial-branded models (CT part number or MX/BX/T prefix)
-        if normalized.startswith("CT"):
-            return self._check_crucial(model, normalized)
-
-        # Crucial SSD by product name (after CRU prefix stripped)
-        crucial_result = self._check_crucial_ssd_name(model, normalized)
-        if crucial_result:
-            return crucial_result
+        # Fallback: try original_item
+        if model.original_item and model.original_item != model.model:
+            item_cleaned = re.sub(
+                r"^[A-Z /]+:(NEW|USED|REFURBISHED):",
+                "",
+                model.original_item.strip().upper(),
+            )
+            item_normalized = self._normalize(item_cleaned)
+            if item_normalized != normalized:
+                result = self._classify(model, item_normalized)
+                if result:
+                    return result
 
         return EOLResult(
             model=model,
@@ -109,10 +154,61 @@ class MicronChecker(BaseChecker):
             notes="micron-model-not-classified",
         )
 
+    def _classify(
+        self, model: HardwareModel, normalized: str,
+    ) -> EOLResult | None:
+        """Try to classify a normalized model string. Returns None if no match."""
+        # ── SSD ordering code classification (before series names) ──
+        for pattern, status, confidence, notes in _SSD_ORDERING_RULES:
+            if pattern.search(normalized):
+                return self._make_ssd_result(model, status, notes)
+
+        # SSD product line match
+        for key, status, notes in _SSD_RULES:
+            if key in normalized:
+                return self._make_ssd_result(model, status, notes)
+
+        # DRAM prefix match — DDR3 EOL
+        for prefix in _DRAM_EOL_PREFIXES:
+            if normalized.startswith(prefix):
+                result = self._make_dram_result(
+                    model, EOLStatus.EOL,
+                    RiskCategory.PROCUREMENT,
+                    f"Micron DDR3 {prefix} - end of life",
+                )
+                self._apply_speed_date(result, normalized)
+                return result
+
+        # DRAM prefix match — DDR4/DDR5 ACTIVE
+        for prefix in _DRAM_ACTIVE_PREFIXES:
+            if normalized.startswith(prefix):
+                result = self._make_dram_result(
+                    model, EOLStatus.ACTIVE,
+                    RiskCategory.NONE,
+                    f"Micron DDR4/DDR5 {prefix} - current",
+                )
+                self._apply_speed_date(result, normalized)
+                return result
+
+        # Crucial-branded models (CT part number or MX/BX/T prefix)
+        if normalized.startswith("CT"):
+            return self._check_crucial(model, normalized)
+
+        # Crucial SSD by product name (after CRU prefix stripped)
+        crucial_result = self._check_crucial_ssd_name(model, normalized)
+        if crucial_result:
+            return crucial_result
+
+        return None
+
     @staticmethod
     def _normalize(model_str: str) -> str:
         s = model_str.strip().upper()
+        # Strip leading capacity like "15.36TB " or "960GB "
+        s = re.sub(r"^\d+(?:\.\d+)?(?:TB|GB)\s+", "", s)
         s = _MICRON_PREFIX_RE.sub("", s)
+        # Strip capacity again (may appear after manufacturer prefix)
+        s = re.sub(r"^\d+(?:\.\d+)?(?:TB|GB)\s+", "", s)
         return s.strip()
 
     @staticmethod
@@ -151,16 +247,28 @@ class MicronChecker(BaseChecker):
         speed_match = _CRUCIAL_SPEED_RE.search(normalized)
         if speed_match:
             speed_code = speed_match.group(1)
-            if speed_code.startswith("821") or speed_code.startswith("824"):
+            if speed_code.startswith("821"):
                 return EOLResult(
                     model=model,
                     status=EOLStatus.EOL,
                     checked_at=datetime.now(),
                     source_name="micron-product-rules",
                     confidence=65,
-                    notes=f"Crucial DDR4 (speed code {speed_code}) - older generation, EOL",
+                    notes=f"Crucial DDR4-2133 (speed code {speed_code}) - older generation, EOL",
                     eol_reason=EOLReason.TECHNOLOGY_GENERATION,
                     risk_category=RiskCategory.PROCUREMENT,
+                    date_source="none",
+                )
+            if speed_code.startswith("824"):
+                return EOLResult(
+                    model=model,
+                    status=EOLStatus.ACTIVE,
+                    checked_at=datetime.now(),
+                    source_name="micron-product-rules",
+                    confidence=65,
+                    notes=f"Crucial DDR4-2400 RDIMM (speed code {speed_code}) - still available",
+                    eol_reason=EOLReason.NONE,
+                    risk_category=RiskCategory.INFORMATIONAL,
                     date_source="none",
                 )
             return EOLResult(
@@ -229,6 +337,17 @@ class MicronChecker(BaseChecker):
                     date_source="none",
                 )
         return None
+
+    @staticmethod
+    def _apply_speed_date(result: EOLResult, normalized: str) -> None:
+        """Set release_date from Micron memory speed code (e.g. -2G6 = DDR4-2666)."""
+        match = _MICRON_SPEED_RE.search(normalized)
+        if match:
+            speed_code = match.group(1)
+            rel_date = _MICRON_SPEED_DATES.get(speed_code)
+            if rel_date:
+                result.release_date = rel_date
+                result.date_source = "micron-speed-bin"
 
     @staticmethod
     def _make_ssd_result(

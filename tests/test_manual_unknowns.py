@@ -41,9 +41,9 @@ async def test_kingston_sl16d316_eol(checker):
 
 
 @pytest.mark.asyncio
-async def test_dell_m2_unknown(checker):
-    result = await checker.check(_hw("M.2", "Dell"))
-    assert result.status == EOLStatus.UNKNOWN
+async def test_dell_m2_active(checker):
+    result = await checker.check(_hw("960GB M.2", "Dell"))
+    assert result.status == EOLStatus.ACTIVE
 
 
 @pytest.mark.asyncio

@@ -191,12 +191,13 @@ async def test_kingston_ddr3_eol_no_date():
 
 
 @pytest.mark.asyncio
-async def test_samsung_ddr3_eol_no_date():
+async def test_samsung_ddr3_eol_speed_bin_date():
     checker = SamsungChecker()
     result = await checker.check(_model("M393B1G70QH0-YK0", "Samsung", "memory"))
     assert result.status == EOLStatus.EOL
     assert result.eol_date is None
-    assert result.date_source == "none"
+    assert result.release_date == date(2011, 1, 1)
+    assert result.date_source == "samsung-speed-bin"
 
 
 @pytest.mark.asyncio

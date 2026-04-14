@@ -175,11 +175,11 @@ _STATIC_ADDONS: dict[str, dict] = {
         "notes": "management NIC, current product",
     },
     "RSC-W-66G4": {
-        "status": EOLStatus.UNKNOWN,
-        "confidence": 40,
+        "status": EOLStatus.ACTIVE,
+        "confidence": 60,
         "reason": EOLReason.NONE,
-        "risk": RiskCategory.PROCUREMENT,
-        "notes": "riser-card-follows-board-lifecycle",
+        "risk": RiskCategory.INFORMATIONAL,
+        "notes": "riser-card-passive-hardware-follows-board-lifecycle",
     },
 }
 
@@ -243,7 +243,24 @@ class SupermicroChecker(BaseChecker):
                 "not-supermicro-product",
             )
 
-        return self._static_classify(model, normalized)
+        result = self._static_classify(model, normalized)
+        # If unrecognized, try original_item as fallback
+        if (
+            result.status in (EOLStatus.NOT_FOUND, EOLStatus.UNKNOWN)
+            and model.original_item
+            and model.original_item != model.model
+        ):
+            item_cleaned = re.sub(
+                r"^[A-Z /]+:(NEW|USED|REFURBISHED):",
+                "",
+                model.original_item.strip().upper(),
+            )
+            item_normalized = self._normalize(item_cleaned)
+            if item_normalized != normalized:
+                alt_result = self._static_classify(model, item_normalized)
+                if alt_result.status not in (EOLStatus.NOT_FOUND, EOLStatus.UNKNOWN):
+                    return alt_result
+        return result
 
     # -- Static generation fallback -----------------------------------
 
@@ -360,12 +377,17 @@ class SupermicroChecker(BaseChecker):
         s = model_str.strip().upper()
         if s.startswith("OPTICS:"):
             s = s[7:]
+        # Strip "SM " or "SMC " prefix
+        s = re.sub(r"^(?:SM|SMC)\s+", "", s)
         # Strip trailing quantity suffix like " - 2"
         s = re.sub(r"\s+-\s+\d+$", "", s)
         # Strip W/xxx suffixes (W/HS, W/E31241, etc.)
         s = re.sub(r"\s+W/.*$", "", s)
         # Strip description suffixes (DUAL PORT 40G NIC, etc.)
         s = re.sub(r"\s+(?:DUAL|QUAD|SINGLE)\s+.*$", "", s)
+        # Handle "SYS- AS-" prefix (strip the errant "SYS- ")
+        if re.match(r"^SYS-\s+AS-", s):
+            s = re.sub(r"^SYS-\s+", "", s)
         # For non-standard model strings, extract embedded board prefix
         known_starts = (
             "X", "H1", "CSE", "SYS", "AS-", "AOC", "AOM", "SNK", "RSC", "SPC", "S80",

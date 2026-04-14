@@ -1,7 +1,7 @@
 """Solidigm EOL checker for enterprise SSDs.
 
 Solidigm was formed from Intel's NAND business in 2021.
-Only 3 models in the dataset.  No HTTP calls needed.
+No HTTP calls needed.
 """
 
 from datetime import datetime
@@ -9,20 +9,24 @@ from datetime import datetime
 from ..checker import BaseChecker
 from ..models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategory
 
-_PRODUCTS: dict[str, tuple[EOLStatus, RiskCategory, str]] = {
-    "D5-P4320": (
-        EOLStatus.EOL, RiskCategory.PROCUREMENT,
-        "Solidigm D5-P4320 - older QLC NVMe, EOL",
-    ),
-    "D5-P5316": (
-        EOLStatus.ACTIVE, RiskCategory.NONE,
-        "Solidigm D5-P5316 - current QLC NVMe",
-    ),
-    "D5-P5430": (
-        EOLStatus.ACTIVE, RiskCategory.NONE,
-        "Solidigm D5-P5430 - current NVMe",
-    ),
-}
+# (pattern, status, confidence, notes)
+# Order matters: more specific patterns before broader ones.
+_RULES: list[tuple[str, EOLStatus, int, str]] = [
+    # EOL products (older Intel-era)
+    ("D5-P4320", EOLStatus.EOL, 80, "Solidigm D5-P4320 - older QLC NVMe, EOL"),
+    ("D5P4320", EOLStatus.EOL, 80, "Solidigm D5-P4320 - older QLC NVMe, EOL"),
+    # Active D5-P5xxx products
+    ("D5-P5", EOLStatus.ACTIVE, 80, "Solidigm D5-P5 series - current QLC NVMe"),
+    # Active D7 products
+    ("D7", EOLStatus.ACTIVE, 80, "Solidigm D7 series - current enterprise NVMe"),
+    # Consumer lines
+    ("P41", EOLStatus.ACTIVE, 80, "Solidigm P41 - current consumer NVMe"),
+    ("P44", EOLStatus.ACTIVE, 80, "Solidigm P44 - current consumer NVMe"),
+    # SSDPF part numbers (current enterprise)
+    ("SSDPF", EOLStatus.ACTIVE, 70, "Solidigm SSDPF - current enterprise NVMe"),
+    # Synergy line
+    ("SYNERGY", EOLStatus.ACTIVE, 80, "Solidigm Synergy - current enterprise NVMe"),
+]
 
 
 class SolidigmChecker(BaseChecker):
@@ -34,28 +38,41 @@ class SolidigmChecker(BaseChecker):
     base_url = ""
 
     async def check(self, model: HardwareModel) -> EOLResult:
-        normalized = model.model.strip().upper()
+        normalized = self._normalize(model.model)
+        upper = normalized.upper()
 
-        for key, (status, risk, notes) in _PRODUCTS.items():
-            if key in normalized:
+        for pattern, status, confidence, notes in _RULES:
+            if pattern.upper() in upper:
                 return EOLResult(
                     model=model,
                     status=status,
                     checked_at=datetime.now(),
-                    source_name="solidigm-static-lookup",
-                    confidence=80,
+                    source_name="solidigm-product-rules",
+                    confidence=confidence,
                     notes=notes,
-                    eol_reason=EOLReason.PRODUCT_DISCONTINUED
+                    eol_reason=EOLReason.TECHNOLOGY_GENERATION
                     if status == EOLStatus.EOL
                     else EOLReason.NONE,
-                    risk_category=risk,
+                    risk_category=RiskCategory.PROCUREMENT,
                 )
 
         return EOLResult(
             model=model,
-            status=EOLStatus.UNKNOWN,
+            status=EOLStatus.ACTIVE,
             checked_at=datetime.now(),
-            source_name="solidigm-static-lookup",
+            source_name="solidigm-product-rules",
             confidence=50,
-            notes="solidigm-model-not-classified",
+            notes="Solidigm model not specifically classified",
+            eol_reason=EOLReason.NONE,
+            risk_category=RiskCategory.PROCUREMENT,
         )
+
+    @staticmethod
+    def _normalize(model_str: str) -> str:
+        s = model_str.strip()
+        upper = s.upper()
+        for prefix in ("SOLIDIGM ", "INTEL "):
+            if upper.startswith(prefix):
+                s = s[len(prefix):].strip()
+                break
+        return s

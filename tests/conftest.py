@@ -2,6 +2,8 @@
 
 import pytest
 
+from eol_tool.checker import BaseChecker
+from eol_tool.checkers.endoflife_date import EndOfLifeDateChecker
 from eol_tool.models import HardwareModel
 
 
@@ -14,6 +16,16 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if "playwright" in item.keywords:
                 item.add_marker(skip_pw)
+
+
+@pytest.fixture(autouse=True)
+def _reset_checker_caches():
+    """Clear class-level caches between tests."""
+    BaseChecker._response_cache.clear()
+    EndOfLifeDateChecker._all_products = None
+    yield
+    BaseChecker._response_cache.clear()
+    EndOfLifeDateChecker._all_products = None
 
 
 @pytest.fixture

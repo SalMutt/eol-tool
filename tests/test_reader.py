@@ -157,14 +157,13 @@ class TestWriteResults:
         assert not ws.cell(row=3, column=13).value
         wb.close()
 
-    def test_model_column_uses_original_item(self, tmp_path):
+    def test_model_column_uses_clean_model(self, tmp_path):
         out = tmp_path / "output.xlsx"
         write_results(_sample_results_with_original(), out)
         wb = openpyxl.load_workbook(out)
         ws = wb["EOL Results"]
-        # Model column shows original_item when available
-        assert ws.cell(row=2, column=1).value == "EX4300-48T-AFI"
-        # Falls back to model when original_item is empty
+        # Model column shows clean model.model, not original_item
+        assert ws.cell(row=2, column=1).value == "EX4300-48T"
         assert ws.cell(row=3, column=1).value == "XEON E3-1230V5"
         wb.close()
 

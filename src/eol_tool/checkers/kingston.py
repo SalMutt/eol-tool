@@ -52,6 +52,7 @@ _SSD_PATTERNS: list[tuple[str, EOLStatus, RiskCategory, str]] = [
 # Tuples: (prefix, status, risk, notes, eol_date_or_None)
 _MEMORY_PATTERNS: list[tuple[str, EOLStatus, RiskCategory, str]] = [
     # DDR5
+    ("KSM64", EOLStatus.ACTIVE, RiskCategory.NONE, "Kingston Server DDR5-6400"),
     ("KSM56", EOLStatus.ACTIVE, RiskCategory.NONE, "Kingston Server DDR5-5600"),
     ("KSM48", EOLStatus.ACTIVE, RiskCategory.NONE, "Kingston Server DDR5-4800"),
     ("KVR56", EOLStatus.ACTIVE, RiskCategory.NONE, "Kingston Value DDR5-5600"),

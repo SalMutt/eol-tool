@@ -1,5 +1,4 @@
 """FastAPI application wrapping eol-tool functionality."""
-
 import csv
 import io
 import json
@@ -20,6 +19,7 @@ from openpyxl.utils import get_column_letter
 from pydantic import BaseModel, field_validator
 
 from eol_tool import __version__
+from eol_tool._paths import data_dir
 
 from .cache import ResultCache
 from .check_pipeline import run_check_pipeline
@@ -44,8 +44,9 @@ _CSV_FIELDS = [
     "eol_date", "eos_date", "source_url", "notes",
 ]
 
-_CSV_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "manual_overrides.csv"
-_LAST_RUN_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "last_run.json"
+
+_CSV_PATH = data_dir() / "manual_overrides.csv"
+_LAST_RUN_PATH = data_dir() / "last_run.json"
 _csv_lock = threading.Lock()
 _last_run_lock = threading.Lock()
 
@@ -153,6 +154,7 @@ def _result_to_dict(r: EOLResult) -> dict:
         "status": r.status.value,
         "eol_date": r.eol_date.isoformat() if r.eol_date else None,
         "eos_date": r.eos_date.isoformat() if r.eos_date else None,
+        "release_date": r.release_date.isoformat() if r.release_date else None,
         "date_source": r.date_source,
         "risk_category": r.risk_category.value,
         "eol_reason": r.eol_reason.value,

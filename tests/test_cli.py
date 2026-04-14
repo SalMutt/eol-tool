@@ -107,7 +107,7 @@ def test_quiet_flag_suppresses_progress(tmp_path):
     # -q should suppress "Loaded", "Manufacturers", and "Checking" lines
     assert "Loaded" not in result.output
     assert "Manufacturers" not in result.output
-    assert "Checking" not in result.stderr
+    assert "Checking" not in result.output
 
 
 def test_show_warnings_lists_individual_rows(tmp_path):
@@ -128,7 +128,7 @@ def test_show_warnings_lists_individual_rows(tmp_path):
     assert result.exit_code == 0, result.output
     # With --show-warnings, each no-manufacturer row should be logged individually
     # Logging goes to stderr via basicConfig
-    all_output = result.output + result.stderr
+    all_output = result.output
     assert "MYSTERY-1" in all_output
     assert "MYSTERY-2" in all_output
 
@@ -150,7 +150,7 @@ def test_default_batches_warnings(tmp_path):
     )
 
     assert result.exit_code == 0, result.output
-    all_output = result.output + result.stderr
+    all_output = result.output
     # Default: batch summary, not individual model names
     assert "3 rows have no manufacturer" in all_output
     assert "MYSTERY-1" not in all_output

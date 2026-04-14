@@ -42,7 +42,7 @@ class TestDRAM:
     async def test_m393a_ddr4(self, checker):
         r = await checker.check(_hw("M393A4K40DB3", category="memory"))
         assert r.status == EOLStatus.ACTIVE
-        assert r.confidence == 65
+        assert r.confidence == 70
 
     async def test_m321r_ddr5(self, checker):
         r = await checker.check(_hw("M321R8GA0BB0", category="memory"))

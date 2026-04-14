@@ -1,0 +1,700 @@
+generation_pattern,release_date,eol_estimate,source
+# Intel CPU generations
+Haswell,2013-06-01,2019-12-31,intel-ark-historical
+Broadwell,2015-06-01,2020-12-31,intel-ark-historical
+Skylake,2015-08-01,2021-12-31,intel-ark-historical
+Kaby Lake,2017-01-01,2022-12-31,intel-ark-historical
+Coffee Lake,2017-10-01,2023-12-31,intel-ark-historical
+Skylake-SP,2017-07-01,2023-06-30,intel-ark-historical
+Cascade Lake,2019-04-01,2024-12-31,intel-ark-historical
+Ice Lake-SP,2021-04-01,,intel-ark-historical
+Sapphire Rapids,2023-01-01,,intel-ark-historical
+E3 v3,2013-06-01,2019-12-31,intel-ark-historical
+E3 v5,2015-10-01,2021-12-31,intel-ark-historical
+E3 v6,2017-01-01,2022-12-31,intel-ark-historical
+E5 v1,2012-03-01,2018-12-31,intel-ark-historical
+E5 v2,2013-09-01,2019-12-31,intel-ark-historical
+E5 v3,2014-09-01,2020-12-31,intel-ark-historical
+E5 v4,2016-03-01,2021-12-31,intel-ark-historical
+E-2100,2018-07-01,2023-12-31,intel-ark-historical
+E-2200,2019-05-01,,intel-ark-historical
+E-2300,2021-03-01,,intel-ark-historical
+E-2400,2023-10-01,,intel-ark-historical
+Xeon Scalable 1st,2017-07-01,2023-06-30,intel-ark-historical
+Xeon Scalable 2nd,2019-04-01,2024-12-31,intel-ark-historical
+Xeon Scalable 3rd,2021-04-01,,intel-ark-historical
+Xeon Scalable 4th,2023-01-01,,intel-ark-historical
+# AMD CPU generations
+Naples,2017-06-01,2022-12-31,amd-historical
+Rome,2019-08-01,2024-12-31,amd-historical
+Milan,2021-03-01,,amd-historical
+Genoa,2022-11-01,,amd-historical
+Turin,2024-10-01,,amd-historical
+Zen 2,2019-07-01,2024-12-31,amd-historical
+Zen 3,2020-11-01,,amd-historical
+Zen 4,2022-09-01,,amd-historical
+Zen 5,2024-07-01,,amd-historical
+EPYC 7001,2017-06-01,2022-12-31,amd-historical
+EPYC 7002,2019-08-01,2024-12-31,amd-historical
+EPYC 7003,2021-03-01,,amd-historical
+EPYC 9004,2022-11-01,,amd-historical
+Siena,2024-01-01,,amd-historical
+# Memory generations
+DDR3,2007-06-01,2020-12-31,jedec-standard
+DDR3-1333,2009-01-01,2020-12-31,jedec-standard
+DDR3-1600,2011-01-01,2020-12-31,jedec-standard
+DDR3-1866,2012-01-01,2020-12-31,jedec-standard
+DDR4,2014-09-01,,jedec-standard
+DDR4-2133,2014-09-01,2024-12-31,jedec-standard
+DDR4-2400,2016-01-01,,jedec-standard
+DDR4-2666,2017-01-01,,jedec-standard
+DDR4-2933,2019-01-01,,jedec-standard
+DDR4-3200,2020-01-01,,jedec-standard
+DDR5,2021-11-01,,jedec-standard
+DDR5-4800,2021-11-01,,jedec-standard
+DDR5-5200,2022-06-01,,jedec-standard
+DDR5-5600,2023-01-01,,jedec-standard
+DDR5-6400,2023-06-01,,jedec-standard
+# SSD/Storage generations
+SATA III,2009-05-01,,sata-io-standard
+NVMe Gen3,2014-01-01,,nvme-standard
+NVMe Gen4,2019-06-01,,nvme-standard
+NVMe Gen5,2022-01-01,,nvme-standard
+SAS-2,2009-01-01,2020-12-31,t10-standard
+SAS-3,2013-03-01,,t10-standard
+SAS-4,2017-11-01,,t10-standard
+# GPU generations
+Kepler,2012-03-01,2019-03-31,nvidia-historical
+Maxwell,2014-09-01,2021-03-31,nvidia-historical
+Pascal,2016-05-01,2022-12-31,nvidia-historical
+Volta,2017-12-01,2023-12-31,nvidia-historical
+Turing,2018-09-01,,nvidia-historical
+Ampere,2020-05-01,,nvidia-historical
+Ada Lovelace,2022-09-01,,nvidia-historical
+Hopper,2022-09-01,,nvidia-historical
+Blackwell,2024-03-01,,nvidia-historical
+# Network generations
+ConnectX-2,2008-01-01,2018-12-31,mellanox-historical
+ConnectX-3,2012-01-01,2022-12-31,mellanox-historical
+ConnectX-4,2015-06-01,,mellanox-historical
+ConnectX-5,2017-01-01,,mellanox-historical
+ConnectX-6,2019-06-01,,mellanox-historical
+ConnectX-7,2022-01-01,,mellanox-historical
+X520,2010-06-01,2018-12-31,intel-historical
+X540,2012-06-01,2019-12-31,intel-historical
+X550,2015-10-01,,intel-historical
+X710,2014-09-01,,intel-historical
+I350,2012-06-01,,intel-historical
+# Juniper switch generations
+EX4200,2008-11-01,2019-06-30,juniper-eol-notices
+EX4300,2013-10-01,2025-01-31,juniper-eol-notices
+EX4600,2015-03-01,,juniper-eol-notices
+EX3300,2012-03-01,2020-03-31,juniper-eol-notices
+EX3400,2017-04-01,,juniper-eol-notices
+EX2300,2016-10-01,,juniper-eol-notices
+QFX5100,2013-10-01,2025-06-30,juniper-eol-notices
+QFX5120,2018-09-01,,juniper-eol-notices
+QFX5200,2017-01-01,,juniper-eol-notices
+QFX5300,2023-01-01,,juniper-eol-notices
+MX480,2008-04-01,,juniper-eol-notices
+MX960,2006-07-01,,juniper-eol-notices
+MX204,2018-07-01,,juniper-eol-notices
+MX150,2018-01-01,,juniper-eol-notices
+SRX300,2016-06-01,,juniper-eol-notices
+SRX340,2016-06-01,,juniper-eol-notices
+SRX220,2011-01-01,2021-01-15,juniper-eol-notices
+SRX1500,2016-04-01,,juniper-eol-notices
+SRX4600,2017-07-01,,juniper-eol-notices
+# Supermicro board generations
+X9,2012-01-01,2020-12-31,supermicro-historical
+X10,2014-01-01,2022-12-31,supermicro-historical
+X11,2017-01-01,,supermicro-historical
+X12,2020-01-01,,supermicro-historical
+X13,2023-01-01,,supermicro-historical
+H11,2017-06-01,,supermicro-historical
+H12,2019-08-01,,supermicro-historical
+H13,2022-11-01,,supermicro-historical
+H14,2024-06-01,,supermicro-historical
+# Dell PowerEdge generations
+PowerEdge 12G,2012-03-01,2020-08-17,dell-support
+PowerEdge 13G,2015-01-01,2023-08-17,dell-support
+PowerEdge 14G,2017-07-01,,dell-support
+PowerEdge 15G,2021-05-01,,dell-support
+# Broadcom/LSI RAID generations
+SAS 9200,2010-01-01,2018-12-31,broadcom-historical
+SAS 9260,2010-01-01,2018-12-31,broadcom-historical
+SAS 9300,2014-01-01,2022-12-31,broadcom-historical
+SAS 9361,2014-01-01,2022-12-31,broadcom-historical
+SAS 9400,2018-01-01,,broadcom-historical
+SAS 9500,2020-01-01,,broadcom-historical
+SAS 9600,2023-01-01,,broadcom-historical
+MegaRAID 9260,2010-01-01,2018-12-31,broadcom-historical
+MegaRAID 9361,2014-01-01,,broadcom-historical
+MegaRAID 9560,2021-01-01,,broadcom-historical
+# Brocade (all EOL - acquired by Broadcom 2017)
+Brocade,2005-01-01,2020-12-31,broadcom-acquisition
+TurboIron,2010-01-01,2017-11-17,broadcom-acquisition
+ServerIron,2008-01-01,2017-11-17,broadcom-acquisition
+FastIron,2008-01-01,2020-12-31,broadcom-acquisition
+# OCZ (acquired by Toshiba 2014)
+OCZ,2008-01-01,2014-01-31,toshiba-acquisition
+# EVGA (exited GPU market 2022)
+EVGA GPU,2010-01-01,2022-09-30,evga-announcement
+# HGST/Hitachi (acquired by WD 2012)
+HGST,2003-01-01,2018-12-31,wd-acquisition
+# Seagate product lines
+Seagate Constellation,2009-01-01,2018-12-31,seagate-historical
+Seagate Exos,2017-06-01,,seagate-historical
+Seagate IronWolf,2016-09-01,,seagate-historical
+Seagate BarraCuda,2016-09-01,,seagate-historical
+# Kingston DC SSDs
+Kingston DC400,2016-01-01,2020-12-31,kingston-historical
+Kingston DC450R,2019-01-01,,kingston-historical
+Kingston DC500,2019-01-01,,kingston-historical
+Kingston DC600M,2023-01-01,,kingston-historical
+# Intel SSD generations (all EOL - sold to Solidigm)
+Intel SSD DC S3500,2013-07-01,2021-12-31,intel-historical
+Intel SSD DC S3510,2015-01-01,2021-12-31,intel-historical
+Intel SSD DC S3610,2015-01-01,2021-12-31,intel-historical
+Intel SSD D3-S4510,2018-08-01,2021-12-31,intel-historical
+Intel SSD D3-S4610,2018-08-01,2021-12-31,intel-historical
+Intel SSD DC P3500,2014-03-01,2021-12-31,intel-historical
+Intel SSD DC P3700,2014-03-01,2021-12-31,intel-historical
+Intel SSD DC P4500,2017-01-01,2021-12-31,intel-historical
+Intel SSD DC P4510,2018-01-01,2021-12-31,intel-historical
+Intel SSD DC P4610,2018-01-01,2021-12-31,intel-historical
+Intel SSD 520,2012-02-01,2021-12-31,intel-historical
+Intel SSD 540s,2016-06-01,2021-12-31,intel-historical
+Intel SSD 660p,2018-08-01,2021-12-31,intel-historical
+Intel SSD 760p,2018-01-01,2021-12-31,intel-historical
+S3500,2013-07-01,2021-12-31,intel-historical
+S3510,2015-01-01,2021-12-31,intel-historical
+S3520,2016-07-01,2021-12-31,intel-historical
+S3610,2015-01-01,2021-12-31,intel-historical
+S4510,2018-08-01,2021-12-31,intel-historical
+S4610,2018-08-01,2021-12-31,intel-historical
+P3500,2014-03-01,2021-12-31,intel-historical
+P3520,2016-07-01,2021-12-31,intel-historical
+P3600,2014-03-01,2021-12-31,intel-historical
+P3700,2014-03-01,2021-12-31,intel-historical
+P4500,2017-01-01,2021-12-31,intel-historical
+P4510,2018-01-01,2021-12-31,intel-historical
+P4600,2017-01-01,2021-12-31,intel-historical
+660p,2018-08-01,2021-12-31,intel-historical
+760p,2018-01-01,2021-12-31,intel-historical
+# HPE ProLiant generations
+ProLiant Gen8,2012-03-01,2020-12-31,hpe-historical
+ProLiant Gen9,2014-09-01,2022-12-31,hpe-historical
+ProLiant Gen10,2017-07-01,,hpe-historical
+ProLiant Gen10 Plus,2021-04-01,,hpe-historical
+ProLiant Gen11,2023-05-01,,hpe-historical
+# Samsung enterprise SSD models
+PM863,2015-03-01,2020-12-31,samsung-historical
+PM883,2018-03-01,2023-12-31,samsung-historical
+PM893,2021-06-01,,samsung-historical
+PM9A3,2021-01-01,,samsung-historical
+SM863,2015-06-01,2020-12-31,samsung-historical
+# Samsung memory part number prefixes
+M393A,2014-09-01,,samsung-historical
+M393B,2010-01-01,2020-12-31,samsung-historical
+M391A,2014-09-01,,samsung-historical
+M386A,2016-01-01,,samsung-historical
+M321,2021-11-01,,samsung-historical
+# SK Hynix memory part number prefixes
+HMA,2014-09-01,,sk-hynix-historical
+HMAA,2019-01-01,,sk-hynix-historical
+HMT,2010-01-01,2020-12-31,sk-hynix-historical
+HMCG,2021-11-01,,sk-hynix-historical
+# Micron memory part number prefixes
+MTA18ADF,2016-01-01,,micron-historical
+MTA36ASF,2016-01-01,,micron-historical
+MT36KSF,2010-01-01,2020-12-31,micron-historical
+MT18KSF,2010-01-01,2020-12-31,micron-historical
+# Kingston memory speed bins
+KSM24,2016-03-01,,kingston-ddr4-2400
+KSM26,2017-07-01,,kingston-ddr4-2666
+KSM29,2019-04-01,,kingston-ddr4-2933
+KSM32,2020-03-01,,kingston-ddr4-3200
+KSM48,2021-11-01,,kingston-ddr5-4800
+KSM56,2023-01-01,,kingston-ddr5-5600
+KSM64,2023-06-01,,kingston-ddr5-6400
+KVR13,2009-06-01,2020-12-31,kingston-ddr3-1333
+KVR16,2011-01-01,2020-12-31,kingston-ddr3-1600
+KVR21,2014-09-01,2024-12-31,kingston-ddr4-2133
+KVR24,2016-03-01,,kingston-ddr4-2400
+KVR26,2017-07-01,,kingston-ddr4-2666
+KVR32,2020-03-01,,kingston-ddr4-3200
+KVR48,2021-11-01,,kingston-ddr5-4800
+KVR56,2023-01-01,,kingston-ddr5-5600
+KTD-PE424,2016-03-01,,kingston-ddr4-2400
+# SK Hynix memory speed bins
+HMT31,2011-01-01,2020-12-31,hynix-ddr3-8gb
+HMT41,2012-01-01,2020-12-31,hynix-ddr3-8gb-ecc
+HMT42,2012-01-01,2020-12-31,hynix-ddr3-16gb
+HMA41,2015-01-01,,hynix-ddr4-8gb
+HMA42,2015-01-01,,hynix-ddr4-16gb
+HMA81,2016-01-01,,hynix-ddr4-8gb-v2
+HMA82,2016-01-01,,hynix-ddr4-16gb-v2
+HMA84,2017-01-01,,hynix-ddr4-32gb
+HMAA4,2019-01-01,,hynix-ddr4-32gb-v2
+HMAA8,2019-01-01,,hynix-ddr4-64gb
+HMAB,2020-01-01,,hynix-ddr4-v3
+# Crucial memory speed bins
+DFD8213,2014-09-01,,crucial-ddr4-2133
+DFD824,2016-03-01,,crucial-ddr4-2400
+XFD8266,2017-07-01,,crucial-ddr4-2666
+RFD4213,2014-09-01,,crucial-ddr4-2133-rdimm
+RFD424,2016-03-01,,crucial-ddr4-2400-rdimm
+RFD4266,2017-07-01,,crucial-ddr4-2666-rdimm
+RFD4293,2019-04-01,,crucial-ddr4-2933-rdimm
+RFD432,2020-03-01,,crucial-ddr4-3200-rdimm
+WFD824,2016-03-01,,crucial-ddr4-2400-ecc
+WFD8266,2017-07-01,,crucial-ddr4-2666-ecc
+WFS824,2016-03-01,,crucial-ddr4-2400-sodimm
+# Micron SSD models
+5100,2017-01-01,2021-12-31,micron-historical
+5210,2018-06-01,2022-12-31,micron-historical
+5300,2019-09-01,,micron-historical
+5400,2022-01-01,,micron-historical
+7300,2019-12-01,,micron-historical
+7400,2021-06-01,,micron-historical
+7450,2022-06-01,,micron-historical
+9300,2019-06-01,,micron-historical
+9400,2022-10-01,,micron-historical
+# Solidigm SSDs (former Intel NAND)
+Solidigm D7-P5510,2021-12-01,,solidigm-historical
+Solidigm D7-P5520,2022-06-01,,solidigm-historical
+Solidigm D7-P5620,2023-01-01,,solidigm-historical
+# Kioxia SSDs
+CM6,2020-10-01,,kioxia-historical
+CD6,2020-10-01,,kioxia-historical
+PM6,2020-04-01,,kioxia-historical
+PM7,2022-08-01,,kioxia-historical
+XD6,2021-06-01,,kioxia-historical
+# WD/SanDisk SSDs
+Ultrastar DC SN640,2019-09-01,,wd-historical
+Ultrastar DC SN840,2020-09-01,,wd-historical
+Ultrastar DC SN860,2021-06-01,,wd-historical
+# ASRock Rack server boards
+X470D4U,2018-09-01,,asrock-historical
+X570D4U,2020-01-01,,asrock-historical
+ROMED8,2020-01-01,,asrock-historical
+# ASUS server platforms
+RS700-E9,2017-07-01,2022-12-31,asus-historical
+RS700-E10,2021-04-01,,asus-historical
+RS700-E11,2023-05-01,,asus-historical
+RS520-E9,2017-07-01,2022-12-31,asus-historical
+# Cisco networking
+ASA 5506,2015-10-01,2022-09-01,cisco-eol-notices
+ASA 5508,2015-10-01,2025-09-01,cisco-eol-notices
+ASA 5516,2015-10-01,2025-09-01,cisco-eol-notices
+ASA 5525,2012-11-01,2022-09-01,cisco-eol-notices
+ASA 5545,2012-11-01,2022-09-01,cisco-eol-notices
+ASA 5555,2012-11-01,2022-09-01,cisco-eol-notices
+Catalyst 9300,2017-11-01,,cisco-eol-notices
+Catalyst 3850,2013-10-01,2025-10-31,cisco-eol-notices
+Nexus 9332,2015-06-01,,cisco-eol-notices
+Nexus 93180,2016-03-01,,cisco-eol-notices
+# Arista networking
+7050TX,2013-06-01,2023-12-31,arista-historical
+7050SX,2013-06-01,2023-12-31,arista-historical
+7050QX,2012-09-01,2022-12-31,arista-historical
+7060CX,2016-09-01,,arista-historical
+7060SX2,2019-01-01,,arista-historical
+7280SR,2015-06-01,,arista-historical
+7280CR3,2019-09-01,,arista-historical
+7020SR,2018-06-01,,arista-historical
+7010T,2011-03-01,2021-12-31,arista-historical
+# Transcend SSDs
+SSD220S,2016-09-01,,transcend-historical
+SSD230S,2017-03-01,,transcend-historical
+MTE110S,2019-01-01,,transcend-historical
+MTS830S,2017-06-01,,transcend-historical
+# Mushkin SSDs
+Pilot,2018-06-01,,mushkin-historical
+Tempest,2022-01-01,,mushkin-historical
+Source,2019-01-01,,mushkin-historical
+# Generic Intel CPU MPN patterns (stepping codes)
+CM8066,2015-06-01,2021-12-31,intel-historical
+CM8067,2017-01-01,2023-12-31,intel-historical
+CM8068,2017-10-01,,intel-historical
+CD8067,2017-07-01,2023-06-30,intel-historical
+CD8069,2019-04-01,,intel-historical
+CD8070,2021-04-01,,intel-historical
+BX8069,2019-04-01,,intel-historical
+BX8070,2021-04-01,,intel-historical
+# WD product lines
+WD Gold,2016-01-01,,wd-product-line
+WD Red,2012-10-01,,wd-product-line
+WD Red Pro,2014-09-01,,wd-product-line
+WD Black,2010-01-01,,wd-product-line
+WD Blue,2012-01-01,,wd-product-line
+WD Purple,2014-06-01,,wd-product-line
+WD Ultrastar,2018-01-01,,wd-product-line
+WD Green,2007-01-01,2015-12-31,wd-product-line
+WD RE,2006-01-01,2016-12-31,wd-product-line
+WD Caviar,2005-01-01,2015-12-31,wd-product-line
+# Seagate model-era patterns
+Seagate enterprise,2010-01-01,,seagate-product-line
+Seagate desktop,2010-01-01,,seagate-product-line
+Seagate NAS,2013-01-01,,seagate-product-line
+ST91000,2010-01-01,2018-12-31,seagate-model-era
+ST1000NM,2012-01-01,,seagate-model-era
+ST2000NM,2012-01-01,,seagate-model-era
+ST3000NM,2013-01-01,,seagate-model-era
+ST4000NM,2014-01-01,,seagate-model-era
+ST6000NM,2015-01-01,,seagate-model-era
+ST8000NM,2016-01-01,,seagate-model-era
+ST10000NM,2017-01-01,,seagate-model-era
+ST12000NM,2018-01-01,,seagate-model-era
+ST16000NM,2020-01-01,,seagate-model-era
+ST1000DM,2012-01-01,,seagate-model-era
+ST2000DM,2013-01-01,,seagate-model-era
+ST3000DM,2013-01-01,,seagate-model-era
+ST4000DM,2014-01-01,,seagate-model-era
+ST1000LM,2013-01-01,,seagate-model-era
+ST2000LM,2015-01-01,,seagate-model-era
+ST1200MM,2013-01-01,2020-12-31,seagate-model-era
+# Toshiba HDD generations
+MG04,2014-09-01,2020-12-31,toshiba-product-gen
+MG06,2018-01-01,2022-12-31,toshiba-product-gen
+MG07,2018-06-01,2023-12-31,toshiba-product-gen
+MG08,2019-10-01,,toshiba-product-gen
+MG09,2021-02-01,,toshiba-product-gen
+MG10,2022-11-01,,toshiba-product-gen
+MD06,2017-01-01,2021-12-31,toshiba-product-gen
+# Samsung SSD product lines (consumer + additional enterprise)
+PM983,2018-01-01,2022-12-31,samsung-ssd-product
+PM9C3,2020-09-01,,samsung-ssd-product
+PM1743,2022-01-01,,samsung-ssd-product
+M391B,2011-01-01,2018-12-31,samsung-memory-gen
+M321R,2022-07-01,,samsung-memory-gen
+870 EVO,2021-01-01,,samsung-ssd-product
+870 PRO,2021-01-01,,samsung-ssd-product
+860 EVO,2018-01-01,2023-12-31,samsung-ssd-product
+860 PRO,2018-01-01,2023-12-31,samsung-ssd-product
+840 EVO,2013-07-01,2019-12-31,samsung-ssd-product
+970 EVO,2018-04-01,2023-12-31,samsung-ssd-product
+990 PRO,2022-10-01,,samsung-ssd-product
+850 EVO,2015-01-01,2020-12-31,samsung-ssd-product
+# Kingston SSD product lines (consumer + additional DC)
+Kingston DC3000ME,2024-01-01,,kingston-ssd-product
+Kingston KC2500,2020-01-01,2023-12-31,kingston-ssd-product
+Kingston KC3000,2021-11-01,,kingston-ssd-product
+Kingston A400,2017-07-01,,kingston-ssd-product
+Kingston A2000,2019-09-01,2022-12-31,kingston-ssd-product
+Kingston DC2000B,2022-01-01,,kingston-ssd-product
+Kingston NV2,2022-10-01,,kingston-ssd-product
+Kingston V300,2013-06-01,2018-12-31,kingston-ssd-product
+Kingston KC400,2016-01-01,2020-12-31,kingston-ssd-product
+Kingston KC600,2019-11-01,,kingston-ssd-product
+# Micron SSD product lines (prefixed for specificity)
+Micron 5100,2016-09-01,2021-12-31,micron-ssd-product
+Micron 5200,2018-01-01,2022-12-31,micron-ssd-product
+Micron 5300,2019-06-01,,micron-ssd-product
+Micron 5400,2022-04-01,,micron-ssd-product
+Micron 7300,2019-11-01,,micron-ssd-product
+Micron 7400,2021-06-01,,micron-ssd-product
+Micron 7450,2022-06-01,,micron-ssd-product
+Micron 7500,2024-04-01,,micron-ssd-product
+Micron 9400,2023-10-01,,micron-ssd-product
+Micron M500,2013-04-01,2017-12-31,micron-ssd-product
+Micron M600,2014-09-01,2018-12-31,micron-ssd-product
+# Intel NIC product lines (prefixed)
+Intel X520,2010-01-01,2020-12-31,intel-nic-product
+Intel X540,2012-06-01,2021-12-31,intel-nic-product
+Intel X550,2015-08-01,,intel-nic-product
+Intel X710,2015-09-01,,intel-nic-product
+Intel X722,2016-07-01,,intel-nic-product
+Intel I350,2012-06-01,,intel-nic-product
+Intel I210,2013-01-01,,intel-nic-product
+# Intel NVMe SSDs (additional patterns)
+Intel P3xxx,2014-03-01,2021-12-31,intel-historical
+Intel P4xxx,2017-01-01,2021-12-31,intel-historical
+# Broadcom/LSI RAID (additional patterns)
+LSI 9261,2010-01-01,2018-12-31,broadcom-raid-gen
+LSI 9271,2012-01-01,2020-12-31,broadcom-raid-gen
+9300-8I,2014-01-01,,broadcom-raid-gen
+9305,2016-01-01,,broadcom-raid-gen
+9362,2015-01-01,,broadcom-raid-gen
+9460,2018-01-01,,broadcom-raid-gen
+9560,2021-01-01,,broadcom-raid-gen
+9660,2023-06-01,,broadcom-raid-gen
+Broadcom 57416,2017-01-01,,broadcom-nic-product
+# Dell RAID controllers
+PERC H310,2012-03-01,2020-08-17,dell-raid-gen
+PERC H330,2015-01-01,2023-08-17,dell-raid-gen
+PERC H700,2009-09-01,2018-02-08,dell-raid-gen
+PERC H710,2012-03-01,2020-08-17,dell-raid-gen
+PERC H730,2015-01-01,2023-08-17,dell-raid-gen
+PERC H755,2021-05-01,,dell-raid-gen
+Dell SFP-25G,2019-01-01,,dell-optic
+Dell 2C2CP,2015-01-01,2023-08-17,dell-board
+# KIOXIA SSD product lines (prefixed)
+KIOXIA CD6,2020-10-01,,kioxia-ssd-product
+KIOXIA CD7,2023-01-01,,kioxia-ssd-product
+KIOXIA CD8,2024-01-01,,kioxia-ssd-product
+KIOXIA CM6,2020-10-01,,kioxia-ssd-product
+KIOXIA CM7,2023-01-01,,kioxia-ssd-product
+KIOXIA Exceria,2020-03-01,,kioxia-ssd-product
+CD7,2023-01-01,,kioxia-historical
+CD8,2024-01-01,,kioxia-historical
+CM7,2023-01-01,,kioxia-historical
+# Solidigm SSD (additional models)
+Solidigm D5-P5316,2021-12-01,,solidigm-ssd-product
+Solidigm D5-P5430,2023-06-01,,solidigm-ssd-product
+# Crucial SSDs
+Crucial P1,2018-09-01,2022-12-31,crucial-ssd-product
+Crucial MX200,2015-01-01,2018-12-31,crucial-ssd-product
+Crucial MX300,2016-06-01,2019-12-31,crucial-ssd-product
+Crucial MX500,2018-01-01,,crucial-ssd-product
+Crucial BX500,2018-08-01,,crucial-ssd-product
+Crucial T705,2024-06-01,,crucial-ssd-product
+Crucial P5 Plus,2021-08-01,,crucial-ssd-product
+# ASRock Rack boards (additional)
+B650D4U,2023-01-01,,asrock-board-product
+E3C242,2019-01-01,,asrock-board-product
+E3C246,2019-01-01,,asrock-board-product
+E3C252,2021-01-01,,asrock-board-product
+AM5D4ID,2023-06-01,,asrock-board-product
+1U2LW-X570,2020-06-01,,asrock-board-product
+# Gigabyte server boards
+MC12-LE0,2020-01-01,,gigabyte-board-product
+MC13-LE0,2022-11-01,,gigabyte-board-product
+# NVIDIA GPU products
+RTX 4000,2018-09-01,,nvidia-gpu-product
+RTX 5000,2018-09-01,,nvidia-gpu-product
+RTX A5000,2021-04-01,,nvidia-gpu-product
+RTX A6000,2020-12-01,,nvidia-gpu-product
+Quadro P2200,2019-05-01,,nvidia-gpu-product
+Quadro K1200,2015-07-01,2020-12-31,nvidia-gpu-product
+Quadro GP100,2017-02-01,2021-12-31,nvidia-gpu-product
+NVIDIA A2,2021-11-01,,nvidia-gpu-product
+GTX 1080 Ti,2017-03-01,2022-12-31,nvidia-gpu-product
+GeForce 210,2009-10-01,2016-12-31,nvidia-gpu-product
+GeForce GTX TITAN X,2015-03-01,2020-12-31,nvidia-gpu-product
+Tesla K80,2014-11-01,2022-12-31,nvidia-gpu-product
+# Mellanox NIC products (additional)
+MNPA19,2009-01-01,2018-12-31,mellanox-nic-product
+MNPH29,2008-01-01,2017-12-31,mellanox-nic-product
+# Mushkin SSD (additional)
+Chronos,2012-01-01,2018-12-31,mushkin-ssd-product
+# Dynatron heatsinks
+Dynatron,2010-01-01,,dynatron-heatsink
+# Commodity optics/transceivers
+SFP-10G,2010-01-01,,commodity-optic
+SFP-25G,2016-01-01,,commodity-optic
+SFP-1GE,2002-01-01,,commodity-optic
+SFP-GE,2002-01-01,,commodity-optic
+QSFP-100G,2017-01-01,,commodity-optic
+QSFP-40G,2012-01-01,,commodity-optic
+10G SFP,2010-01-01,,commodity-optic
+10GBASE-T,2006-07-01,,commodity-optic
+40GBASE,2010-06-01,,commodity-optic
+100GBASE,2017-01-01,,commodity-optic
+CFP-GEN2,2016-01-01,,commodity-optic
+# Cisco wireless/other
+Cisco 2500,2012-01-01,2020-12-31,cisco-eol-notices
+Aironet 3700,2014-01-01,2022-12-31,cisco-eol-notices
+ASA5516,2015-10-01,2025-09-01,cisco-eol-notices
+# Bare SSD model patterns (when manufacturer prefix not adjacent)
+BX500,2018-08-01,,crucial-ssd-product
+MX200,2015-01-01,2018-12-31,crucial-ssd-product
+MX300,2016-06-01,2019-12-31,crucial-ssd-product
+MX500,2018-01-01,,crucial-ssd-product
+SA2000,2019-09-01,2022-12-31,kingston-ssd-product
+CS1311,2015-01-01,2019-12-31,pny-ssd-product
+CS900,2017-01-01,,pny-ssd-product
+SSD225S,2020-01-01,,transcend-historical
+Half-Slim SSD,2010-01-01,2018-12-31,transcend-historical
+# Samsung ordering code prefixes
+MZ7L3,2021-06-01,,samsung-ssd-product
+MZ-7,2015-01-01,,samsung-ssd-product
+# Optic speed/form factor patterns
+-40G,2011-01-01,,commodity-optic
+-100G,2017-01-01,,commodity-optic
+-50G,2019-01-01,,commodity-optic
+XFP,2005-01-01,,commodity-optic
+SFPP-10G,2010-01-01,,commodity-optic
+CVR-QSFP,2013-01-01,,commodity-optic
+SFP-GB,2002-01-01,,commodity-optic
+SFP1G,2002-01-01,,commodity-optic
+QSFP+-UNIV,2013-01-01,,commodity-optic
+# Supermicro chassis/components
+CSE-LA,2022-01-01,,supermicro-chassis
+CSE-,2012-01-01,,supermicro-chassis
+AOC-SAS2,2010-01-01,2018-12-31,supermicro-historical
+AOC-S40G,2016-01-01,,supermicro-historical
+1029U,2017-07-01,,supermicro-historical
+5039MS,2017-01-01,,supermicro-historical
+# Intel RAID expander
+RES2SV240,2008-01-01,2016-12-31,intel-historical
+# Intel CPU family patterns
+E3-1200,2012-03-01,2020-12-31,intel-historical
+Ice Lake,2021-04-01,,intel-ark-historical
+# PNY SSD additional
+PNY CS,2015-01-01,,pny-ssd-product
+# Juniper MX components (follow parent chassis lifecycle)
+MPC-3D,2012-01-01,,juniper-eol-notices
+MPC3E,2014-01-01,,juniper-eol-notices
+MPC5E,2016-01-01,,juniper-mx-component
+MIC3-3D,2012-01-01,,juniper-eol-notices
+# Juniper support contracts and software licenses
+AIF-SP-FXP,2015-01-01,,juniper-support-contract
+AIF-TMS,2015-01-01,,juniper-support-contract
+MNT-SP-FXP,2015-01-01,,juniper-support-contract
+MNT-S-SEN,2015-01-01,,juniper-support-contract
+MNT SP-FXP,2015-01-01,,juniper-support-contract
+S-RA3,2015-01-01,,juniper-support-contract
+S-SRX,2016-01-01,,juniper-support-contract
+S-MX,2015-01-01,,juniper-support-contract
+S-EX,2015-01-01,,juniper-support-contract
+S-QFX,2015-01-01,,juniper-support-contract
+S-ACCT,2015-01-01,,juniper-support-contract
+S-AACL,2015-01-01,,juniper-support-contract
+S-NAT,2015-01-01,,juniper-support-contract
+# Juniper PSU products
+JPSU-650W,2015-01-01,,juniper-psu-product
+JPSU-350W,2013-01-01,,juniper-psu-product
+PWR-MX480,2008-04-01,,juniper-psu-product
+PWR-MX960,2006-07-01,,juniper-psu-product
+# Intel NIC products (additional patterns)
+Dual 1GbE,2010-01-01,,intel-nic-product
+X710-BM2,2015-09-01,,intel-nic-product
+X710-T4L,2020-01-01,,intel-nic-product
+X550-T2,2015-08-01,,intel-nic-product
+X520-DA2,2010-01-01,2020-12-31,intel-nic-product
+I350-T4,2012-06-01,,intel-nic-product
+# Corsair DDR5
+CP2K,2023-01-01,,corsair-ddr5
+# Dell PowerEdge (short form patterns)
+PowerEdge R750,2021-05-01,,dell-support
+PowerEdge R650,2021-05-01,,dell-support
+R750,2021-05-01,,dell-support
+# ASUS server platforms (additional)
+RS300-E11,2022-01-01,,asus-server-gen
+RS520A-E12,2023-06-01,,asus-server-gen
+WRX90E,2023-11-01,,asus-board-product
+# ASRock boards (additional)
+S8016AGM2NR,2023-01-01,,asrock-board-product
+# Adaptec RAID
+ASR-6405E,2010-01-01,2020-12-31,adaptec-raid-gen
+ASR-71605,2013-01-01,,adaptec-raid-gen
+ASR-8805,2014-06-01,,adaptec-raid-gen
+# Supermicro board/components (additional)
+SPC621D8,2021-01-01,,supermicro-board-product
+AOM-CGP-I2M,2018-01-01,,supermicro-nic-product
+RSC-W-66G4,2020-01-01,,supermicro-riser-product
+# Transcend memory and SSD products
+TS64GHSD452T,2018-01-01,,transcend-memory-product
+TS64GMTS400S,2016-01-01,2020-12-31,transcend-ssd-product
+# IBM RAID products
+IBM M5014,2010-01-01,2016-12-31,ibm-raid-product
+IBM M5015,2010-01-01,2016-12-31,ibm-raid-product
+M5014,2010-01-01,2016-12-31,ibm-raid-product
+M5015,2010-01-01,2016-12-31,ibm-raid-product
+# Samsung SSD products (additional)
+Samsung PM981,2018-06-01,,samsung-ssd-product
+PM981,2018-06-01,,samsung-ssd-product
+# Mushkin SSD (additional patterns)
+Mushkin Chronos,2012-01-01,2018-12-31,mushkin-ssd-product
+# PNY products
+PNY Optima,2012-01-01,2017-12-31,pny-memory-product
+Optima,2012-01-01,2017-12-31,pny-memory-product
+# MSI SSD products
+MSI SPATIUM,2023-01-01,,msi-ssd-product
+SPATIUM S270,2023-01-01,,msi-ssd-product
+# ADATA SSD products
+ADATA SU650,2017-09-01,,adata-ssd-product
+SU650,2017-09-01,,adata-ssd-product
+# Arista switch products (additional)
+Arista 7050S,2012-03-01,2022-12-31,arista-switch-gen
+7050S,2012-03-01,2022-12-31,arista-switch-gen
+# Mellanox NIC products (additional)
+Mellanox ConnectX-2,2008-01-01,2018-12-31,mellanox-nic-product
+# WD products (additional)
+WD GREEN,2007-01-01,2015-12-31,wd-product-line
+# Micron SSD products (additional)
+Micron 2300,2020-01-01,,micron-ssd-product
+# NVIDIA GPU products (additional)
+Tesla K80,2014-11-01,2022-12-31,nvidia-gpu-product
+# Gigabyte SSD products
+Gigabyte SSD,2020-01-01,,gigabyte-ssd-product
+# Axiom generic
+Axiom,2018-01-01,,axiom-generic
+# A-Tech generic
+A-Tech,2018-01-01,,atech-generic
+# Kingston SSD products (additional)
+Kingston V300,2013-06-01,2018-12-31,kingston-ssd-product
+# HP enterprise
+MB4000,2014-01-01,2020-12-31,hp-enterprise-drive
+# Chenbro chassis
+RM13,2012-01-01,,chenbro-chassis
+# Dynatron heatsinks (additional patterns)
+Dynatron A,2018-01-01,,dynatron-heatsink
+# Power supply generic
+SCLA15,2020-01-01,,generic-psu
+# Juniper additional MX components
+MPC4E,2014-01-01,2023-12-31,juniper-mx-component
+MIC-3D,2012-01-01,2022-12-31,juniper-mx-component
+RE-S-1800,2013-01-01,2022-12-31,juniper-mx-component
+SCBE-MX,2012-01-01,2022-12-31,juniper-mx-component
+SCBE2-MX,2016-01-01,,juniper-mx-component
+QFX-EM,2015-01-01,,juniper-qfx-component
+MNT-TMS,2015-01-01,,juniper-support-contract
+SP-FXP-CORE,2015-01-01,,juniper-support-contract
+# Intel CPU human-readable (Xeon Scalable 1st/2nd gen)
+4110 SILVER,2017-07-01,2023-06-30,intel-ark-historical
+6138 GOLD,2017-07-01,2023-06-30,intel-ark-historical
+6148 GOLD,2017-07-01,2023-06-30,intel-ark-historical
+6140 GOLD,2017-07-01,2023-06-30,intel-ark-historical
+6132 GOLD,2017-07-01,2023-06-30,intel-ark-historical
+# Intel SSD model numbers (when preceded by INT)
+INT 540,2016-06-01,2021-12-31,intel-historical
+INT 520,2012-02-01,2021-12-31,intel-historical
+P4511,2019-01-01,2021-12-31,intel-historical
+# ASRock 1U systems
+1U4LW-B650,2023-06-01,,asrock-board-product
+# Dell SAS controllers
+HM030,2009-01-01,2018-12-31,dell-raid-gen
+# Kingston SSD models (with brand abbreviation)
+SSDnowV300,2013-06-01,2018-12-31,kingston-ssd-product
+# Mellanox NIC models (with human-readable name)
+Connect-X2,2008-01-01,2018-12-31,mellanox-nic-product
+# Micron SSD models (additional)
+P4MU312,2020-01-01,,micron-ssd-product
+Micron 2300,2020-01-01,,micron-ssd-product
+MIC 2300,2020-01-01,,micron-ssd-product
+# Broadcom model numbers
+9240,2010-01-01,2018-12-31,broadcom-raid-gen
+9220,2010-01-01,2018-12-31,broadcom-raid-gen
+9500,2020-01-01,,broadcom-raid-gen
+# Intel NIC X722
+X722-DA4,2016-07-01,,intel-nic-product
+# Generic optic patterns
+10GBASE,2006-07-01,,commodity-optic
+DWDM,2010-01-01,,commodity-optic
+# Fiber patch cable / passive infrastructure
+PTTS-H008,2015-01-01,,passive-infrastructure
+PTTS-H,2010-01-01,,commodity-optic
+# Intel NIC X722 (bare pattern)
+X722,2016-07-01,,intel-nic-product
+# Intel SSD series (human-readable names)
+Intel 540,2016-06-01,2021-12-31,intel-ssd-historical
+Intel 520,2012-02-01,2021-12-31,intel-ssd-historical
+Intel DC P4511,2018-10-01,2021-12-31,intel-ssd-historical
+# Broadcom RAID 9500-8i
+9500-8i,2020-01-01,,broadcom-raid-gen
+# Dell SAS 6/iR
+SAS 6/i,2008-01-01,2015-12-31,dell-raid-gen
+# Passive optical (additional)
+SFP+ 850nm,2010-01-01,,commodity-optic
+DWDM OADM,2010-01-01,,commodity-optic
+# Chenbro chassis
+RM133,2016-01-01,,chenbro-chassis
+# IBM switch products
+4273-E48,2012-01-01,2018-12-31,ibm-switch-product
+# Juniper QFX PSU components
+QFXC01,2018-01-01,,juniper-qfx-psu
+# Crucial DDR4 RDIMM part numbers
+CT16G4RFD824,2016-01-01,,crucial-ddr4-rdimm

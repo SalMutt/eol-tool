@@ -63,14 +63,72 @@ _KNOWN_MODELS: dict[str, dict] = {
         "status": EOLStatus.ACTIVE,
         "notes": "MegaRAID SAS 9362-8i - SAS3 RAID, current",
     },
+    # ── SAS3 RAID controllers ──────────────────────────────────────
+    "9380-4I4E": {
+        "status": EOLStatus.EOL,
+        "notes": "MegaRAID SAS 9380-4i4e - SAS3 RAID, EOL",
+    },
+    "9380-8E": {
+        "status": EOLStatus.EOL,
+        "notes": "MegaRAID SAS 9380-8e - SAS3 RAID, EOL",
+    },
+    "9341-8I": {
+        "status": EOLStatus.EOL,
+        "notes": "MegaRAID SAS 9341-8i - SAS3 RAID, EOL",
+    },
+    "9341-4I": {
+        "status": EOLStatus.EOL,
+        "notes": "MegaRAID SAS 9341-4i - SAS3 RAID, EOL",
+    },
     # ── SAS4 / NVMe tri-mode ────────────────────────────────────────
+    "9400-8I": {
+        "status": EOLStatus.ACTIVE,
+        "notes": "MegaRAID 9400-8i - SAS3 tri-mode, current",
+    },
+    "9400-16I": {
+        "status": EOLStatus.ACTIVE,
+        "notes": "MegaRAID 9400-16i - SAS3 tri-mode, current",
+    },
+    "9460-8I": {
+        "status": EOLStatus.ACTIVE,
+        "notes": "MegaRAID 9460-8i - SAS3 tri-mode RAID, current",
+    },
+    "9460-16I": {
+        "status": EOLStatus.ACTIVE,
+        "notes": "MegaRAID 9460-16i - SAS3 tri-mode RAID, current",
+    },
     "9500-8I": {
         "status": EOLStatus.ACTIVE,
         "notes": "MegaRAID 9500-8i - SAS4/NVMe tri-mode, current generation",
     },
+    "9500-16I": {
+        "status": EOLStatus.ACTIVE,
+        "notes": "MegaRAID 9500-16i - SAS4/NVMe tri-mode, current generation",
+    },
+    "9560-8I": {
+        "status": EOLStatus.ACTIVE,
+        "notes": "MegaRAID 9560-8i - SAS4 RAID, current",
+    },
+    "9560-16I": {
+        "status": EOLStatus.ACTIVE,
+        "notes": "MegaRAID 9560-16i - SAS4 RAID, current",
+    },
+    "9600-16I": {
+        "status": EOLStatus.ACTIVE,
+        "notes": "MegaRAID 9600-16i - SAS4 HBA, latest generation",
+    },
     "9660-16I": {
         "status": EOLStatus.ACTIVE,
         "notes": "MegaRAID 9660-16i - latest generation tri-mode",
+    },
+    # ── Broadcom NICs ───────────────────────────────────────────────
+    "57416": {
+        "status": EOLStatus.ACTIVE,
+        "notes": "Broadcom 57416 - 10GBase-T dual port NIC, current",
+    },
+    "57412": {
+        "status": EOLStatus.ACTIVE,
+        "notes": "Broadcom 57412 - 10GbE SFP+ dual port NIC, current",
     },
 }
 
@@ -95,13 +153,41 @@ class BroadcomChecker(BaseChecker):
         if normalized in _INTEL_MODELS:
             return self._not_found(model, "intel-raid-expander-not-broadcom")
 
-        entry = _KNOWN_MODELS.get(normalized)
-        if entry:
-            return self._make_result(
-                model, entry["status"], entry["notes"],
+        result = self._lookup(model, normalized)
+        if result:
+            return result
+
+        # Fallback: try original_item (e.g. "RAID CARDS:NEW:LSI 9260-8i")
+        if model.original_item and model.original_item != model.model:
+            item_cleaned = re.sub(
+                r"^[A-Z /]+:(NEW|USED|REFURBISHED):",
+                "",
+                model.original_item.strip().upper(),
             )
+            item_normalized = self._normalize(item_cleaned)
+            result = self._lookup(model, item_normalized)
+            if result:
+                return result
 
         return self._not_found(model, "not-found-in-broadcom-lookup")
+
+    @staticmethod
+    def _lookup(
+        model: HardwareModel, normalized: str,
+    ) -> EOLResult | None:
+        entry = _KNOWN_MODELS.get(normalized)
+        if entry:
+            return BroadcomChecker._make_result(
+                model, entry["status"], entry["notes"],
+            )
+        # Try substring match (longest key first) for partial model strings
+        for key in sorted(_KNOWN_MODELS, key=len, reverse=True):
+            if key in normalized:
+                return BroadcomChecker._make_result(
+                    model, _KNOWN_MODELS[key]["status"],
+                    _KNOWN_MODELS[key]["notes"],
+                )
+        return None
 
     @staticmethod
     def _normalize(model_str: str) -> str:

@@ -78,6 +78,53 @@ _DATE_SOURCE_LABELS = {
     "none": "Not Available",
 }
 
+# Generation-estimate sources from generation_dates.csv map to
+# "Generation Estimate" in the output.  Use .get() fallback for
+# any source value not in _DATE_SOURCE_LABELS.
+_GENERATION_ESTIMATE_SOURCES = frozenset({
+    "intel-ark-historical", "amd-historical", "jedec-standard",
+    "sata-io-standard", "nvme-standard", "t10-standard",
+    "nvidia-historical", "mellanox-historical", "intel-historical",
+    "juniper-eol-notices", "supermicro-historical", "dell-support",
+    "broadcom-historical", "broadcom-acquisition", "toshiba-acquisition",
+    "evga-announcement", "wd-acquisition", "seagate-historical",
+    "kingston-historical", "solidigm-historical", "kioxia-historical",
+    "wd-historical", "asrock-historical", "asus-historical",
+    "cisco-eol-notices", "arista-historical", "transcend-historical",
+    "mushkin-historical", "samsung-historical", "sk-hynix-historical",
+    "micron-historical", "hpe-historical", "generation-estimate",
+    "juniper-support-contract", "juniper-psu-product",
+    "intel-nic-product", "corsair-ddr5", "asus-server-gen",
+    "asus-board-product", "asrock-board-product", "adaptec-raid-gen",
+    "supermicro-board-product", "supermicro-nic-product",
+    "supermicro-riser-product", "transcend-memory-product",
+    "transcend-ssd-product", "ibm-raid-product", "samsung-ssd-product",
+    "mushkin-ssd-product", "pny-memory-product", "pny-ssd-product",
+    "msi-ssd-product", "adata-ssd-product", "arista-switch-gen",
+    "mellanox-nic-product", "wd-product-line", "micron-ssd-product",
+    "nvidia-gpu-product", "gigabyte-ssd-product", "axiom-generic",
+    "atech-generic", "kingston-ssd-product", "hp-enterprise-drive",
+    "chenbro-chassis", "dynatron-heatsink", "generic-psu",
+    "broadcom-raid-gen", "broadcom-nic-product", "dell-raid-gen",
+    "dell-optic", "dell-board", "solidigm-ssd-product",
+    "crucial-ssd-product", "gigabyte-board-product",
+    "seagate-model-era", "seagate-product-line", "toshiba-product-gen",
+    "samsung-memory-gen", "commodity-optic",
+    "intel-scalable-1st-gen", "intel-ssd-historical",
+    "juniper-mx-component", "juniper-qfx-component",
+    "passive-infrastructure",
+})
+
+
+def _date_source_label(source: str) -> str:
+    """Convert a date_source value to a human-readable label."""
+    label = _DATE_SOURCE_LABELS.get(source)
+    if label:
+        return label
+    if source in _GENERATION_ESTIMATE_SOURCES:
+        return "Generation Estimate"
+    return "Not Available"
+
 
 # ── Manufacturer auto-detection rules ────────────────────────────────
 # Each rule is (compiled_regex, manufacturer_name).
@@ -87,7 +134,7 @@ _MANUFACTURER_RULES: list[tuple[re.Pattern[str], str]] = [
     # Juniper networking
     (re.compile(r"^(?:EX|QFX|SRX|MX)[-\d]", re.IGNORECASE), "Juniper"),
     (re.compile(
-        r"^(?:CHAS-|JPSU-|FFANTRAY-|RE-|MPC|MIC[-\d]|PF-|JNP-|PWR-MX|SCBE)",
+        r"^(?:CHAS-|JPSU-|FFANTRAY-|RE-|MPC|MIC[-\d]|PF-|JNP-|PWR-MX|SCBE|QFXC|SP-FXP)",
         re.IGNORECASE,
     ), "Juniper"),
     # Supermicro
@@ -103,14 +150,19 @@ _MANUFACTURER_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^(?:WD[\d/ ]|WUS|WUSTR)", re.IGNORECASE), "WD"),
     # Kingston memory
     (re.compile(r"^(?:KTD-|KVR|KSM|KTL-|K\dA)", re.IGNORECASE), "Kingston"),
-    # Micron (including MT memory part numbers)
-    (re.compile(r"^(?:MTA|MEM-DR|MT\d)", re.IGNORECASE), "Micron"),
-    # Samsung (including M3xx server memory)
-    (re.compile(r"^(?:MZ-|PM\d|SM\d|M3[289]\d)", re.IGNORECASE), "Samsung"),
+    # Micron (including MT memory part numbers and MTFDDAK/MTFDKC SSD ordering codes)
+    (re.compile(r"^(?:MTA|MEM-DR|MT\d|MTFD)", re.IGNORECASE), "Micron"),
+    # Samsung (including MZ7xx SATA SSDs and M3xx server memory)
+    (re.compile(r"^(?:MZ[A-Z0-9-]|PM\d|SM\d|M3[289]\d)", re.IGNORECASE), "Samsung"),
     # Intel SSDs
     (re.compile(r"^(?:SSDPE|SSDSC|DC\s*P\d|D3-S\d)", re.IGNORECASE), "Intel"),
     # Intel NICs
     (re.compile(r"^(?:X520-|X540-|X550-|X710-|X722-|XXV710-|I350-|E810-)", re.IGNORECASE), "Intel"),
+    # Intel boxed/tray processors (BX80xxx, CD80xxx ordering codes)
+    (re.compile(r"^(?:BX80|CD80)\d", re.IGNORECASE), "Intel"),
+    # Cisco (wireless, ASA, WS-/C-series)
+    (re.compile(r"^AIR-", re.IGNORECASE), "Cisco"),
+    (re.compile(r"^ASA\d", re.IGNORECASE), "Cisco"),
     # Dell
     (re.compile(r"^POWEREDGE", re.IGNORECASE), "Dell"),
     (re.compile(r"^R\d{3}[a-z]*$", re.IGNORECASE), "Dell"),
@@ -122,11 +174,14 @@ _MANUFACTURER_RULES: list[tuple[re.Pattern[str], str]] = [
     # AMD
     (re.compile(r"^(?:EPYC|RYZEN|RADEON)\b", re.IGNORECASE), "AMD"),
     (re.compile(r"^MI\d{2,3}", re.IGNORECASE), "AMD"),
-    # NVIDIA
+    # NVIDIA (including VCQ Quadro part numbers)
     (re.compile(r"^P\d{4}$", re.IGNORECASE), "NVIDIA"),
     (re.compile(r"^RTX", re.IGNORECASE), "NVIDIA"),
     (re.compile(r"^T\d{3,4}$", re.IGNORECASE), "NVIDIA"),
     (re.compile(r"^A\d{3,4}$", re.IGNORECASE), "NVIDIA"),
+    (re.compile(r"^VCQ", re.IGNORECASE), "NVIDIA"),
+    # Zotac GPUs (ZT- part numbers)
+    (re.compile(r"^ZT-[A-Z]", re.IGNORECASE), "Zotac"),
     # Solidigm SSDs (D5-P series, formerly Intel)
     (re.compile(r"^D5-P\d", re.IGNORECASE), "Solidigm"),
     # Intel Xeon E-series (E3-1230, E5-2699, E-2136, etc.)
@@ -142,7 +197,23 @@ _MANUFACTURER_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^TS\d+[A-Z]", re.IGNORECASE), "Transcend"),
     # SK Hynix memory (HMA, HMT, HMAA, etc.)
     (re.compile(r"^HM[A-Z]", re.IGNORECASE), "SK Hynix"),
+    # NVIDIA GPU products (substring match before brand names)
+    (re.compile(r"\bNVIDIA\b", re.IGNORECASE), "NVIDIA"),
+    (re.compile(r"\bTESLA\s+[KMPVAT]\d", re.IGNORECASE), "NVIDIA"),
+    (re.compile(r"\bGEFORCE\b", re.IGNORECASE), "NVIDIA"),
+    (re.compile(r"\bQUADRO\b", re.IGNORECASE), "NVIDIA"),
+    # Dynatron heatsinks
+    (re.compile(r"\bDYNATRON\b", re.IGNORECASE), "Dynatron"),
+    # HP/HPE (match "HP " or "HPE " before a model number to avoid false positives)
+    (re.compile(r"\bHPE\b", re.IGNORECASE), "HPE"),
+    (re.compile(r"\bHP\s+[A-Z]{2}\d", re.IGNORECASE), "HPE"),
+    # Chenbro
+    (re.compile(r"\bCHENBRO\b", re.IGNORECASE), "Chenbro"),
     # ── Brand name substring matches ──────────────────────────────────
+    (re.compile(r"\bSUPERMICRO\b", re.IGNORECASE), "Supermicro"),
+    (re.compile(r"\bCSE-", re.IGNORECASE), "Supermicro"),
+    (re.compile(r"\bCISCO\b", re.IGNORECASE), "Cisco"),
+    (re.compile(r"\bZOTAC\b", re.IGNORECASE), "Zotac"),
     (re.compile(r"\bSEAGATE\b", re.IGNORECASE), "Seagate"),
     (re.compile(r"\bSAMSUNG\b", re.IGNORECASE), "Samsung"),
     (re.compile(r"\bKINGSTON\b", re.IGNORECASE), "Kingston"),
@@ -186,14 +257,17 @@ _MANUFACTURER_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^MUS\b", re.IGNORECASE), "Mushkin"),
     (re.compile(r"^TRAN\b", re.IGNORECASE), "Transcend"),
     (re.compile(r"^ASU\b", re.IGNORECASE), "ASUS"),
+    (re.compile(r"^RS\d{3}", re.IGNORECASE), "ASUS"),
     (re.compile(r"^SM\s", re.IGNORECASE), "Supermicro"),
     (re.compile(r"^SMC\b", re.IGNORECASE), "Supermicro"),
     (re.compile(r"^MSI\b", re.IGNORECASE), "MSI"),
     (re.compile(r"^AXIOM\b", re.IGNORECASE), "Axiom"),
     (re.compile(r"^A-TECH\b", re.IGNORECASE), "A-Tech"),
     (re.compile(r"^ASR\b", re.IGNORECASE), "ASRock"),
+    (re.compile(r"^SPC\d", re.IGNORECASE), "ASRock"),
     (re.compile(r"^MNT[\s-]", re.IGNORECASE), "Juniper"),
-    (re.compile(r"^EDGEVANA\b", re.IGNORECASE), "Edgevana"),
+    (re.compile(r"^FS-", re.IGNORECASE), "FS.com"),
+    (re.compile(r"\bEDGEVANA\b", re.IGNORECASE), "Edgevana"),
 ]
 
 # Category-specific rules (checked first for higher specificity)
@@ -201,6 +275,8 @@ _CATEGORY_MANUFACTURER_RULES: list[tuple[str, re.Pattern[str], str]] = [
     ("switch", re.compile(r"^(?:EX|QFX)", re.IGNORECASE), "Juniper"),
     ("memory", re.compile(r"^MTA", re.IGNORECASE), "Micron"),
     ("memory", re.compile(r"^(?:KTD-|KVR|KSM)", re.IGNORECASE), "Kingston"),
+    # FS.com optics use numeric catalog IDs as MPNs
+    ("optic", re.compile(r"^\d+$"), "FS.com"),
 ]
 
 
@@ -226,6 +302,8 @@ _CATEGORY_PREFIX_MAP: dict[str, str] = {
     "GPU": "gpu",
     "MAINBOARD": "server-board",
     "MOTHERBOARD": "server-board",
+    "SERVER": "server",
+    "SERVER BAREBONE": "server",
     "CHASSIS": "chassis",
     "RAID CARDS": "raid",
     "RAID": "raid",
@@ -286,7 +364,13 @@ def read_models(path: Path, show_warnings: bool = False) -> list[HardwareModel]:
     no_mfr_rows: list[tuple[int, str]] = []
     for row_num, row in enumerate(rows, start=2):
         values = dict(zip(headers, row))
-        model_str = str(values.get("model") or "").strip()
+        # Model priority: MPN > Model > Item
+        model_str = str(values.get("mpn") or "").strip()
+        if not model_str:
+            model_str = str(values.get("model") or "").strip()
+        if not model_str:
+            model_str = str(values.get("item") or "").strip()
+        original_item = str(values.get("item") or "").strip()
         if not model_str:
             continue
 
@@ -296,7 +380,11 @@ def read_models(path: Path, show_warnings: bool = False) -> list[HardwareModel]:
 
         category = str(values.get("category") or "").strip()
         if not category:
-            category = _detect_category_from_prefix(model_str) or "unknown"
+            category = (
+                _detect_category_from_prefix(original_item)
+                or _detect_category_from_prefix(model_str)
+                or "unknown"
+            )
 
         models.append(
             HardwareModel(
@@ -304,7 +392,10 @@ def read_models(path: Path, show_warnings: bool = False) -> list[HardwareModel]:
                 manufacturer=manufacturer,
                 category=category,
                 condition=str(values.get("condition") or "").strip(),
-                original_item=str(values.get("original_item") or "").strip(),
+                original_item=(
+                    original_item if "item" in values
+                    else str(values.get("original_item") or "").strip()
+                ),
             )
         )
 
@@ -327,6 +418,8 @@ def read_models(path: Path, show_warnings: bool = False) -> list[HardwareModel]:
         if m.manufacturer:
             continue
         detected = _detect_manufacturer(m.model, m.category)
+        if not detected and m.original_item:
+            detected = _detect_manufacturer(m.original_item, m.category)
         if detected:
             m.manufacturer = detected
             # Re-normalize with the detected manufacturer so brand-specific
@@ -365,8 +458,7 @@ def write_results(
 
     # Data rows
     for row_idx, r in enumerate(results, start=2):
-        display_model = r.model.original_item if r.model.original_item else r.model.model
-        ws.cell(row=row_idx, column=1, value=display_model)
+        ws.cell(row=row_idx, column=1, value=r.model.model)
         ws.cell(row=row_idx, column=2, value=r.model.manufacturer)
         ws.cell(row=row_idx, column=3, value=r.model.category)
         ws.cell(row=row_idx, column=4, value=r.model.condition)
@@ -382,7 +474,7 @@ def write_results(
         ws.cell(row=row_idx, column=8, value=str(r.release_date) if r.release_date else "")
         ws.cell(
             row=row_idx, column=9,
-            value=_DATE_SOURCE_LABELS.get(r.date_source, "Not Available"),
+            value=_date_source_label(r.date_source),
         )
         ws.cell(row=row_idx, column=10, value=r.confidence)
         ws.cell(row=row_idx, column=11, value=r.source_name)

@@ -3,6 +3,7 @@
 Covers Quadro/RTX GPUs and consumer SSDs.  No HTTP calls needed.
 """
 
+import re
 from datetime import datetime
 
 from ..checker import BaseChecker
@@ -19,10 +20,14 @@ _PRODUCTS: list[tuple[str, EOLStatus, RiskCategory, str]] = [
      "PNY Quadro K1200 - very old Maxwell GPU, EOL"),
     ("P2200", EOLStatus.EOL, RiskCategory.PROCUREMENT,
      "PNY Quadro P2200 - older Turing GPU, EOL"),
+    ("NVIDIA A2", EOLStatus.ACTIVE, RiskCategory.NONE,
+     "NVIDIA A2 - Ampere inference GPU, current"),
     ("CS900", EOLStatus.ACTIVE, RiskCategory.INFORMATIONAL,
      "PNY CS900 - consumer SSD, still available"),
     ("CS1311", EOLStatus.EOL, RiskCategory.PROCUREMENT,
      "PNY CS1311 - consumer SSD, EOL"),
+    ("OPTIMA", EOLStatus.EOL, RiskCategory.PROCUREMENT,
+     "PNY Optima - DDR3 era SSD, EOL"),
 ]
 
 
@@ -36,9 +41,38 @@ class PNYChecker(BaseChecker):
 
     async def check(self, model: HardwareModel) -> EOLResult:
         normalized = model.model.strip().upper()
+        result = self._match(model, normalized)
+        if result:
+            return result
 
+        # Fallback: try original_item
+        if model.original_item and model.original_item != model.model:
+            item_cleaned = re.sub(
+                r"^[A-Z /]+:(NEW|USED|REFURBISHED):",
+                "",
+                model.original_item.strip().upper(),
+            )
+            # Strip capacity prefix
+            item_cleaned = re.sub(r"^\d+(?:\.\d+)?(?:TB|GB)\s+", "", item_cleaned)
+            # Strip PNY prefix
+            item_cleaned = re.sub(r"^PNY\s+", "", item_cleaned)
+            result = self._match(model, item_cleaned)
+            if result:
+                return result
+
+        return EOLResult(
+            model=model,
+            status=EOLStatus.UNKNOWN,
+            checked_at=datetime.now(),
+            source_name="pny-static-lookup",
+            confidence=50,
+            notes="pny-model-not-classified",
+        )
+
+    @staticmethod
+    def _match(model: HardwareModel, text: str) -> EOLResult | None:
         for key, status, risk, notes in _PRODUCTS:
-            if key in normalized:
+            if key in text:
                 return EOLResult(
                     model=model,
                     status=status,
@@ -51,12 +85,4 @@ class PNYChecker(BaseChecker):
                     else EOLReason.NONE,
                     risk_category=risk,
                 )
-
-        return EOLResult(
-            model=model,
-            status=EOLStatus.UNKNOWN,
-            checked_at=datetime.now(),
-            source_name="pny-static-lookup",
-            confidence=50,
-            notes="pny-model-not-classified",
-        )
+        return None

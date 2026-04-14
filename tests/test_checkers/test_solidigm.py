@@ -36,7 +36,7 @@ class TestProducts:
 class TestUnknown:
     async def test_unknown(self, checker):
         r = await checker.check(_hw("MYSTERY"))
-        assert r.status == EOLStatus.UNKNOWN
+        assert r.status == EOLStatus.ACTIVE
 
 
 class TestRegistration:

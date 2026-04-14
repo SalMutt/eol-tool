@@ -4,18 +4,19 @@ Provides EOL status for models that cannot be resolved by vendor-specific
 checkers, tech generation rules, or the endoflife.date API. This is the
 last checker in the priority chain before returning UNKNOWN.
 """
-
 import csv
 import logging
 from datetime import date, datetime
-from pathlib import Path
+
+from eol_tool._paths import data_dir
 
 from ..checker import BaseChecker
 from ..models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategory
 
 logger = logging.getLogger(__name__)
 
-_CSV_PATH = Path(__file__).resolve().parent.parent.parent.parent / "data" / "manual_overrides.csv"
+
+_CSV_PATH = data_dir() / "manual_overrides.csv"
 
 _STATUS_MAP = {
     "eol": EOLStatus.EOL,
@@ -57,6 +58,8 @@ class _OverrideEntry:
         "eos_date",
         "source_url",
         "notes",
+        "release_date",
+        "confidence",
     )
 
     def __init__(self, row: dict[str, str]) -> None:
@@ -69,10 +72,13 @@ class _OverrideEntry:
         self.risk_category = _RISK_MAP.get(
             row.get("risk_category", "").strip().lower(), RiskCategory.NONE
         )
-        self.eol_date = _parse_date(row.get("eol_date", ""))
-        self.eos_date = _parse_date(row.get("eos_date", ""))
-        self.source_url = row.get("source_url", "").strip()
-        self.notes = row.get("notes", "").strip()
+        self.eol_date = _parse_date(row.get("eol_date") or "")
+        self.eos_date = _parse_date(row.get("eos_date") or "")
+        self.source_url = (row.get("source_url") or "").strip()
+        self.notes = (row.get("notes") or "").strip()
+        self.release_date = _parse_date(row.get("release_date") or "")
+        raw_conf = (row.get("confidence") or "").strip()
+        self.confidence = int(raw_conf) if raw_conf else None
 
 
 def _parse_date(value: str) -> date | None:
@@ -141,6 +147,8 @@ class ManualChecker(BaseChecker):
 
     async def check(self, model: HardwareModel) -> EOLResult:
         entry = self._find_match(model.model)
+        if entry is None and model.original_item:
+            entry = self._find_match(model.original_item)
         if entry is None:
             return EOLResult(
                 model=model,
@@ -156,15 +164,17 @@ class ManualChecker(BaseChecker):
             status=entry.status,
             eol_date=entry.eol_date,
             eos_date=entry.eos_date,
+            release_date=entry.release_date,
             source_url=entry.source_url,
             source_name="manual-overrides",
             checked_at=datetime.now(),
-            confidence=80,
+            confidence=entry.confidence if entry.confidence is not None else 80,
             notes=entry.notes,
             eol_reason=EOLReason.MANUAL_OVERRIDE,
             risk_category=entry.risk_category,
             date_source=(
-                "manufacturer_confirmed" if entry.eol_date or entry.eos_date
+                "manufacturer_confirmed"
+                if entry.eol_date or entry.eos_date or entry.release_date
                 else "none"
             ),
         )

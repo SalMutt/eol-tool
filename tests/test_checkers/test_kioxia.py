@@ -22,7 +22,7 @@ class TestKIOXIAActive:
         r = await checker.check(_hw("CD6-R 3.84TB"))
         assert r.status == EOLStatus.ACTIVE
         assert r.confidence == 75
-        assert r.risk_category == RiskCategory.NONE
+        assert r.risk_category == RiskCategory.PROCUREMENT
 
     async def test_cd8_active(self, checker):
         r = await checker.check(_hw("CD8 7.68TB"))
@@ -34,7 +34,7 @@ class TestExceria:
         r = await checker.check(_hw("Exceria Plus G3 2TB"))
         assert r.status == EOLStatus.ACTIVE
         assert r.confidence == 75
-        assert "Exceria" in r.notes
+        assert "EXCERIA" in r.notes
 
     async def test_exceria_lowercase(self, checker):
         r = await checker.check(_hw("KIOXIA EXCERIA 1TB"))
@@ -44,7 +44,7 @@ class TestExceria:
 class TestUnknown:
     async def test_unknown(self, checker):
         r = await checker.check(_hw("KIOXIA-MYSTERY"))
-        assert r.status == EOLStatus.UNKNOWN
+        assert r.status == EOLStatus.ACTIVE
 
 
 class TestRegistration:

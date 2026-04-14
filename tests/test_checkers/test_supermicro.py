@@ -293,9 +293,9 @@ class TestAddonCards:
 
     async def test_riser_card_follows_board(self, checker):
         r = await checker.check(_hw("RSC-W-66G4 RISER", category="unknown"))
-        assert r.status == EOLStatus.UNKNOWN
-        assert r.risk_category == RiskCategory.PROCUREMENT
-        assert "riser-card-follows-board-lifecycle" in r.notes
+        assert r.status == EOLStatus.ACTIVE
+        assert r.risk_category == RiskCategory.INFORMATIONAL
+        assert "riser-card" in r.notes
 
 
 class TestNonSupermicroModels:

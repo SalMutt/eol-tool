@@ -1,6 +1,6 @@
 """Dynatron EOL checker for server heatsinks.
 
-Static lookup by model number, no HTTP calls needed.
+Static lookup by model number and socket type, no HTTP calls needed.
 """
 
 import re
@@ -9,7 +9,7 @@ from datetime import datetime
 from ..checker import BaseChecker
 from ..models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategory
 
-# (model_number, status, risk, eol_reason, notes)
+# (pattern, status, risk, eol_reason, notes)
 _PRODUCTS: list[tuple[str, EOLStatus, RiskCategory, EOLReason, str]] = [
     # AMD SP3/SP5 — current EPYC sockets
     ("A42", EOLStatus.ACTIVE, RiskCategory.INFORMATIONAL,
@@ -58,6 +58,21 @@ _PRODUCTS: list[tuple[str, EOLStatus, RiskCategory, EOLReason, str]] = [
     ("Q8", EOLStatus.EOL, RiskCategory.PROCUREMENT,
      EOLReason.TECHNOLOGY_GENERATION,
      "Dynatron-Q8-Intel-LGA2011-heatsink-legacy"),
+    # Socket-based patterns (when only socket info is provided)
+    ("LGA 4677", EOLStatus.ACTIVE, RiskCategory.NONE,
+     EOLReason.NONE, "Dynatron-LGA4677-heatsink-current"),
+    ("LGA4677", EOLStatus.ACTIVE, RiskCategory.NONE,
+     EOLReason.NONE, "Dynatron-LGA4677-heatsink-current"),
+    ("LGA 2011", EOLStatus.EOL, RiskCategory.PROCUREMENT,
+     EOLReason.TECHNOLOGY_GENERATION,
+     "Dynatron-LGA2011-heatsink-legacy"),
+    ("LGA2011", EOLStatus.EOL, RiskCategory.PROCUREMENT,
+     EOLReason.TECHNOLOGY_GENERATION,
+     "Dynatron-LGA2011-heatsink-legacy"),
+    ("SP5", EOLStatus.ACTIVE, RiskCategory.NONE,
+     EOLReason.NONE, "Dynatron-SP5-heatsink-current"),
+    ("SP3", EOLStatus.ACTIVE, RiskCategory.NONE,
+     EOLReason.NONE, "Dynatron-SP3-heatsink-current"),
 ]
 
 _DYNATRON_RE = re.compile(r"^DYNATRON\s+", re.IGNORECASE)
@@ -72,10 +87,10 @@ class DynatronChecker(BaseChecker):
     base_url = ""
 
     async def check(self, model: HardwareModel) -> EOLResult:
-        normalized = _DYNATRON_RE.sub("", model.model.strip().upper())
+        normalized = _DYNATRON_RE.sub("", model.model.strip()).upper()
 
         for key, status, risk, reason, notes in _PRODUCTS:
-            if key in normalized:
+            if key.upper() in normalized:
                 return EOLResult(
                     model=model,
                     status=status,
@@ -89,9 +104,11 @@ class DynatronChecker(BaseChecker):
 
         return EOLResult(
             model=model,
-            status=EOLStatus.UNKNOWN,
+            status=EOLStatus.ACTIVE,
             checked_at=datetime.now(),
             source_name="dynatron-static-lookup",
-            confidence=50,
-            notes="dynatron-model-not-classified",
+            confidence=40,
+            notes="Dynatron model not specifically classified",
+            eol_reason=EOLReason.NONE,
+            risk_category=RiskCategory.NONE,
         )

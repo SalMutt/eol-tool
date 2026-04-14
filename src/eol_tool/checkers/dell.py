@@ -9,8 +9,6 @@ import logging
 import re
 from datetime import date, datetime
 
-import httpx
-
 from ..checker import BaseChecker
 from ..models import EOLReason, EOLResult, EOLStatus, HardwareModel, RiskCategory
 
@@ -63,6 +61,11 @@ _KNOWN_MODELS: dict[str, dict] = {
     "R650": {
         "status": EOLStatus.ACTIVE,
         "notes": "PowerEdge R650 - launched 2021, current generation",
+        "risk": RiskCategory.SUPPORT,
+    },
+    "R750": {
+        "status": EOLStatus.ACTIVE,
+        "notes": "PowerEdge R750 - launched 2021, current generation",
         "risk": RiskCategory.SUPPORT,
     },
     # ── NICs ─────────────────────────────────────────────────────────
@@ -165,6 +168,15 @@ class DellChecker(BaseChecker):
 
         # Static lookup: exact match first, then prefix/substring
         entry = self._find_known_model(normalized)
+        if not entry and model.original_item and model.original_item != model.model:
+            # Fallback: try original_item (e.g. "DELL HM030 SAS 6/iR")
+            item_cleaned = re.sub(
+                r"^[A-Z /]+:(NEW|USED|REFURBISHED):",
+                "",
+                model.original_item.strip().upper(),
+            )
+            item_normalized = self._normalize(item_cleaned)
+            entry = self._find_known_model(item_normalized)
         if entry:
             eol_date = entry.get("eol_date")
             eos_date = entry.get("eos_date")
@@ -191,12 +203,6 @@ class DellChecker(BaseChecker):
                 "generic-dell-ssd-no-part-number",
                 date_source="none",
             )
-
-        # Fallback: try Dell support site
-        if self._client:
-            result = await self._try_support_page(model, normalized)
-            if result:
-                return result
 
         return self._not_found(model, "not-found-in-dell-lookup")
 
@@ -230,47 +236,21 @@ class DellChecker(BaseChecker):
 
     @staticmethod
     def _find_known_model(normalized: str) -> dict | None:
-        """Find matching model in static lookup table."""
+        """Find matching model in static lookup table (case-insensitive)."""
+        norm_upper = normalized.upper()
         # Exact match
-        if normalized in _KNOWN_MODELS:
-            return _KNOWN_MODELS[normalized]
+        if norm_upper in _KNOWN_MODELS:
+            return _KNOWN_MODELS[norm_upper]
+        # Case-insensitive exact match
+        for key, val in _KNOWN_MODELS.items():
+            if key.upper() == norm_upper:
+                return val
         # Try extracting known keys from the normalized string
         # Longest match first to prefer specific over generic
         for key in sorted(_KNOWN_MODELS, key=len, reverse=True):
-            if key in normalized:
+            if key.upper() in norm_upper:
                 return _KNOWN_MODELS[key]
         return None
-
-    async def _try_support_page(self, model: HardwareModel, normalized: str) -> EOLResult | None:
-        """Attempt to fetch Dell support page; falls back to None on failure."""
-        slug = normalized.lower().replace(" ", "-")
-        url = f"{self.base_url}/support/home/en-us/product-support/product/{slug}/overview"
-        try:
-            resp = await self._fetch(url)
-            if resp.status_code == 200 and "Access Denied" not in resp.text:
-                return self._make_result(
-                    model,
-                    EOLStatus.UNKNOWN,
-                    80,
-                    EOLReason.PRODUCT_DISCONTINUED,
-                    self._risk_for_category(model.category),
-                    f"dell-support-page-found: {url}",
-                    date_source="none",
-                )
-        except httpx.TimeoutException:
-            logger.warning("Timeout fetching %s after 10s", url)
-        except httpx.HTTPStatusError as exc:
-            logger.warning("Failed to fetch %s: %s", url, exc)
-        except Exception as exc:
-            logger.warning("Failed to fetch %s: %s", url, exc)
-        return None
-
-    @staticmethod
-    def _risk_for_category(category: str) -> RiskCategory:
-        cat = category.lower()
-        if cat in ("server", "chassis"):
-            return RiskCategory.SUPPORT
-        return RiskCategory.PROCUREMENT
 
     @staticmethod
     def _make_result(

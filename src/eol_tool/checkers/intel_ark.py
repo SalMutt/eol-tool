@@ -165,7 +165,10 @@ class IntelARKChecker(BaseChecker):
 
     async def __aenter__(self):
         self = await super().__aenter__()
-        if PLAYWRIGHT_AVAILABLE and not self._checker_disabled:
+        if not PLAYWRIGHT_AVAILABLE:
+            logger.warning("Intel ARK scraper unavailable — playwright not installed")
+            self._checker_disabled = True
+        elif not self._checker_disabled:
             try:
                 self._pw_context = await async_playwright().start()
                 self._browser = await self._pw_context.chromium.launch(headless=True)
@@ -206,12 +209,8 @@ class IntelARKChecker(BaseChecker):
         if category not in _SUPPORTED_CATEGORIES:
             return self._make_not_found(model, "unsupported-category")
 
-        if not PLAYWRIGHT_AVAILABLE:
-            logger.warning("playwright not installed - Intel ARK scraper unavailable")
+        if not PLAYWRIGHT_AVAILABLE or self._checker_disabled:
             return self._make_not_found(model, "playwright-not-installed")
-
-        if self._checker_disabled:
-            return self._make_not_found(model, "checker-disabled-chromium-missing")
 
         model_key = _normalize_key(model.model, category)
         cache_key = f"{category}:{model_key}"

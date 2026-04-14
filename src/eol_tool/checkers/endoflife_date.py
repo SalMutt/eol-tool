@@ -4,6 +4,7 @@ import json
 import logging
 import re
 from datetime import date, datetime
+from typing import ClassVar
 
 import httpx
 
@@ -65,17 +66,14 @@ class EndOfLifeDateChecker(BaseChecker):
     rate_limit = 10
     priority = 30
     base_url = "https://endoflife.date/api"
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._all_products: list[str] | None = None
+    _all_products: ClassVar[list[str] | None] = None
 
     async def _get_all_products(self) -> list[str]:
-        """Fetch and cache the list of all product slugs."""
-        if self._all_products is None:
+        """Fetch and cache the list of all product slugs (class-level cache)."""
+        if EndOfLifeDateChecker._all_products is None:
             resp = await self._fetch(f"{self.base_url}/all.json")
-            self._all_products = resp.json()
-        return self._all_products
+            EndOfLifeDateChecker._all_products = resp.json()
+        return EndOfLifeDateChecker._all_products
 
     def _find_matching_slugs(
         self, manufacturer: str, category: str, products: list[str]

@@ -13,6 +13,8 @@ _discovered = False
 # Key: alias (lowercase), Value: target manufacturer (lowercase).
 _MANUFACTURER_ALIASES: dict[str, str] = {
     "crucial": "micron",
+    "hgst": "hitachi",
+    "hp": "hpe",
 }
 
 
