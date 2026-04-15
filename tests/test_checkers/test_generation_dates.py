@@ -243,14 +243,30 @@ class TestTier2ItemFallback:
             date_source="community_database",
         )
 
+        # Mock ARK checker to return not-found (so endoflife.date fallback runs)
+        mock_ark_result = EOLResult(
+            model=results[0].model,
+            status=EOLStatus.NOT_FOUND,
+            checked_at=datetime.now(),
+            source_name="intel_ark",
+        )
+
         with patch(
             "eol_tool.check_pipeline.EndOfLifeDateChecker"
-        ) as MockChecker:
+        ) as MockChecker, patch(
+            "eol_tool.checkers.intel_ark.IntelARKChecker"
+        ) as MockArk:
             instance = AsyncMock()
             instance.check_batch = AsyncMock(return_value=[mock_date_result])
             instance.__aenter__ = AsyncMock(return_value=instance)
             instance.__aexit__ = AsyncMock(return_value=False)
             MockChecker.return_value = instance
+
+            ark_instance = AsyncMock()
+            ark_instance.check = AsyncMock(return_value=mock_ark_result)
+            ark_instance.__aenter__ = AsyncMock(return_value=ark_instance)
+            ark_instance.__aexit__ = AsyncMock(return_value=False)
+            MockArk.return_value = ark_instance
 
             updated = await _tier2_item_fallback(results)
 

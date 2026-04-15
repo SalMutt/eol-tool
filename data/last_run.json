@@ -1,1 +1,1 @@
-{"timestamp": "2026-04-14T12:54:46.949292", "results": [{"model": "EX4300-48T", "manufacturer": "Juniper", "status": "eol", "eol_date": "2023-03-31", "risk_category": "security", "source": "juniper-eol"}]}
+{"timestamp": "2026-04-15T00:32:26.540542", "results": [{"model": "EX4300-48T", "manufacturer": "Juniper", "status": "eol", "eol_date": "2023-03-31", "risk_category": "security", "source": "juniper-eol"}]}

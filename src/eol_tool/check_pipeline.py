@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 
@@ -22,6 +23,140 @@ def _strip_item_prefix(item: str) -> str:
     "PROCESSORS:NEW:Intel Xeon E3-1230 v5" -> "Intel Xeon E3-1230 v5"
     """
     return _strip_colon_prefixes(item.strip().upper()).strip()
+
+
+def _clean_intel_item_for_ark(item: str) -> str:
+    """Convert a QuickBooks item string to a proper Intel ARK search term.
+
+    Examples:
+        '4110 SILVER XEON' → 'Intel Xeon Silver 4110 Processor'
+        'E3-1230 V5' → 'Intel Xeon E3-1230 V5 Processor'
+        '960GB INT D3-S4510 960GB SSD' → 'Intel SSD D3-S4510'
+        'INT X722-DA4 10GB/S QUAD' → 'Intel Ethernet X722-DA4'
+    """
+    s = item.strip()
+
+    # Strip capacity prefix (e.g. "960GB ", "2TB ", "1.2TB ", "128GB ")
+    s = re.sub(r"^\d+(?:\.\d+)?[GTM]B\s+", "", s, flags=re.IGNORECASE)
+
+    # Replace "INT " abbreviation with "Intel "
+    s = re.sub(r"^INT\s+", "Intel ", s, flags=re.IGNORECASE)
+
+    # Strip packaging/condition suffixes
+    s = re.sub(
+        r"\s+(?:RETAIL|TRAY|REFURBISHED|BOXED|OEM|BULK)\s*$",
+        "",
+        s,
+        flags=re.IGNORECASE,
+    )
+    # Strip "20c CPU" style suffixes
+    s = re.sub(r"\s+\d+[cC]\s+CPU\s*$", "", s)
+    # Strip trailing capacity + SSD (e.g. "960GB SSD")
+    s = re.sub(
+        r"\s+\d+(?:\.\d+)?[GTM]B\s+SSD\s*$", "", s, flags=re.IGNORECASE
+    )
+    # Strip speed/port suffixes (e.g. "10Gb/s Quad", "1GBE")
+    s = re.sub(r"\s+\d+GB/S\s+\w+\s*$", "", s, flags=re.IGNORECASE)
+    # Strip form factor suffixes
+    s = re.sub(r"\s+(?:U\.2|M\.2)\s*$", "", s, flags=re.IGNORECASE)
+    # Strip trailing "CPU" or "PROCESSOR"
+    s = re.sub(r"\s+(?:CPU|PROCESSOR)\s*$", "", s, flags=re.IGNORECASE)
+
+    # --- CPU patterns ---
+
+    # "4110 Silver Xeon" or "6132 Gold Xeon 20c CPU" (already stripped suffix)
+    m = re.match(
+        r"(?:INTEL\s+)?(\d{4,5}[A-Z]*)\s+"
+        r"(SILVER|GOLD|PLATINUM|BRONZE)\s+XEON",
+        s,
+        re.IGNORECASE,
+    )
+    if m:
+        return f"Intel Xeon {m.group(2).title()} {m.group(1)} Processor"
+
+    # "Xeon 6226R Gold"
+    m = re.match(
+        r"(?:INTEL\s+)?XEON\s+(\w+)\s+(SILVER|GOLD|PLATINUM|BRONZE)",
+        s,
+        re.IGNORECASE,
+    )
+    if m:
+        return f"Intel Xeon {m.group(2).title()} {m.group(1)} Processor"
+
+    # "Intel Xeon Silver 4310" — already correct, ensure Processor suffix
+    m = re.match(
+        r"INTEL\s+XEON\s+(SILVER|GOLD|PLATINUM|BRONZE)\s+(\d{4,5}[A-Z]*)",
+        s,
+        re.IGNORECASE,
+    )
+    if m:
+        return (
+            f"Intel Xeon {m.group(1).title()} {m.group(2)} Processor"
+        )
+
+    # "Intel Xeon E-2276G" or "Xeon E-2136"
+    m = re.match(
+        r"(?:INTEL\s+)?XEON\s+(E-?\d[\w-]*)", s, re.IGNORECASE
+    )
+    if m:
+        return f"Intel Xeon {m.group(1)} Processor"
+
+    # Bare E-series: "E3-1230 V5", "E-2136", "E5-2683V4"
+    m = re.match(r"(E[357]-\d{4}\s*V?\d*)", s, re.IGNORECASE)
+    if m:
+        return f"Intel Xeon {m.group(1)} Processor"
+    m = re.match(r"(E-\d{4}\w*)", s, re.IGNORECASE)
+    if m:
+        return f"Intel Xeon {m.group(1)} Processor"
+
+    # Bare scalable: "SILVER 4310" or "GOLD 6132"
+    m = re.match(
+        r"(SILVER|GOLD|PLATINUM|BRONZE)\s+(\d{4,5}[A-Z]*)\s*$",
+        s,
+        re.IGNORECASE,
+    )
+    if m:
+        return f"Intel Xeon {m.group(1).title()} {m.group(2)} Processor"
+
+    # --- SSD patterns ---
+
+    # D3-Sxxxx or D5-Pxxxx series
+    m = re.search(r"(D[35]-[SP]\d{4})", s, re.IGNORECASE)
+    if m:
+        return f"Intel SSD {m.group(1)}"
+
+    # P3xxx or P4xxx (DC series)
+    m = re.search(r"(P[34]\d{3})", s, re.IGNORECASE)
+    if m:
+        return f"Intel SSD DC {m.group(1)}"
+
+    # S35xx / S36xx / S37xx (DC series)
+    m = re.search(r"(S3[5-7]\d{2})", s, re.IGNORECASE)
+    if m:
+        return f"Intel SSD DC {m.group(1)}"
+
+    # Consumer SSD series: 520, 540s, 660p, 760p
+    m = re.search(r"\b(520|540[Ss]?|660[Pp]?|760[Pp]?)\b", s)
+    if m:
+        return f"Intel SSD {m.group(1)} Series"
+
+    # --- NIC patterns ---
+
+    m = re.search(
+        r"(X520|X540|X550|X710|X722|I350)([\w-]*)", s, re.IGNORECASE
+    )
+    if m:
+        return f"Intel Ethernet {m.group(1).upper()}{m.group(2)}"
+
+    # --- RAID ---
+
+    if "RES2SV240" in s.upper():
+        return "Intel RAID Expander RES2SV240"
+
+    # --- Fallback: ensure Intel prefix ---
+    if not s.upper().startswith("INTEL"):
+        s = f"Intel {s}"
+    return s
 
 
 def select_best_result(results: list[EOLResult]) -> EOLResult:
@@ -282,11 +417,13 @@ async def run_all_checkers(
 
 
 async def _tier2_item_fallback(results: list[EOLResult]) -> list[EOLResult]:
-    """Retry endoflife.date with the original_item for models with no dates.
+    """Retry with the original_item for models with no dates.
 
     When the MPN-based check returned no release_date AND no eol_date,
     and the model has an original_item that differs from the model string,
-    clean the item string and try the endoflife.date checker with it.
+    clean the item string and retry:
+    - endoflife.date for all manufacturers
+    - Intel ARK with a properly formatted search term for Intel models
     """
     needs_retry: list[EOLResult] = [
         r for r in results
@@ -298,12 +435,28 @@ async def _tier2_item_fallback(results: list[EOLResult]) -> list[EOLResult]:
     if not needs_retry:
         return results
 
-    # Build temporary models from cleaned item strings
-    retry_pairs: list[tuple[EOLResult, HardwareModel]] = []
+    # Split into Intel ARK retries and endoflife.date retries
+    intel_retry_pairs: list[tuple[EOLResult, HardwareModel]] = []
+    eol_retry_pairs: list[tuple[EOLResult, HardwareModel]] = []
+
     for r in needs_retry:
         cleaned = _strip_item_prefix(r.model.original_item)
         if not cleaned or cleaned == r.model.model.upper():
             continue
+
+        # For Intel models, build an ARK-friendly search term
+        if r.model.manufacturer.lower() == "intel":
+            ark_search = _clean_intel_item_for_ark(cleaned)
+            temp_model = HardwareModel(
+                model=ark_search,
+                manufacturer="Intel",
+                category=r.model.category,
+                condition=r.model.condition,
+                original_item=r.model.original_item,
+            )
+            intel_retry_pairs.append((r, temp_model))
+
+        # Also try endoflife.date for all manufacturers
         temp_model = HardwareModel(
             model=cleaned,
             manufacturer=r.model.manufacturer,
@@ -311,41 +464,81 @@ async def _tier2_item_fallback(results: list[EOLResult]) -> list[EOLResult]:
             condition=r.model.condition,
             original_item=r.model.original_item,
         )
-        retry_pairs.append((r, temp_model))
+        eol_retry_pairs.append((r, temp_model))
 
-    if not retry_pairs:
-        return results
+    # --- Intel ARK retries ---
+    if intel_retry_pairs:
+        logger.info(
+            "Tier 2: retrying %d Intel models with cleaned item via ARK",
+            len(intel_retry_pairs),
+        )
+        try:
+            from .checkers.intel_ark import IntelARKChecker
 
-    logger.info(
-        "Tier 2: retrying %d models with original_item via endoflife.date",
-        len(retry_pairs),
-    )
+            ark_checker = IntelARKChecker()
+            async with ark_checker:
+                for original_result, temp_model in intel_retry_pairs:
+                    try:
+                        ark_result = await ark_checker.check(temp_model)
+                        if ark_result.release_date or ark_result.eol_date:
+                            _apply_fallback_dates(
+                                original_result, ark_result,
+                                "dates-from-intel-ark-item-fallback",
+                            )
+                    except Exception:
+                        logger.debug(
+                            "ARK item fallback failed for %s",
+                            temp_model.model,
+                            exc_info=True,
+                        )
+        except Exception:
+            logger.warning("Tier 2 Intel ARK fallback failed", exc_info=True)
 
-    try:
-        checker = EndOfLifeDateChecker()
-        async with checker:
-            temp_models = [pair[1] for pair in retry_pairs]
-            date_results = await checker.check_batch(temp_models)
-            for (original_result, _temp_model), date_result in zip(
-                retry_pairs, date_results
-            ):
-                if date_result.release_date or date_result.eol_date:
-                    if date_result.release_date:
-                        original_result.release_date = date_result.release_date
-                    if date_result.eol_date:
-                        original_result.eol_date = date_result.eol_date
-                    if date_result.eos_date and not original_result.eos_date:
-                        original_result.eos_date = date_result.eos_date
-                    original_result.date_source = date_result.date_source
-                    note = "dates-from-item-string-fallback"
-                    if original_result.notes:
-                        original_result.notes = f"{original_result.notes}; {note}"
-                    else:
-                        original_result.notes = note
-    except Exception:
-        logger.warning("Tier 2 item fallback failed", exc_info=True)
+    # --- endoflife.date retries (for models still missing dates) ---
+    # Filter out models that already got dates from Intel ARK
+    still_missing = [
+        (r, m) for r, m in eol_retry_pairs
+        if r.release_date is None and r.eol_date is None
+    ]
+    if still_missing:
+        logger.info(
+            "Tier 2: retrying %d models with original_item via endoflife.date",
+            len(still_missing),
+        )
+        try:
+            checker = EndOfLifeDateChecker()
+            async with checker:
+                temp_models = [pair[1] for pair in still_missing]
+                date_results = await checker.check_batch(temp_models)
+                for (original_result, _temp_model), date_result in zip(
+                    still_missing, date_results
+                ):
+                    if date_result.release_date or date_result.eol_date:
+                        _apply_fallback_dates(
+                            original_result, date_result,
+                            "dates-from-item-string-fallback",
+                        )
+        except Exception:
+            logger.warning("Tier 2 item fallback failed", exc_info=True)
 
     return results
+
+
+def _apply_fallback_dates(
+    target: EOLResult, source: EOLResult, note: str,
+) -> None:
+    """Copy dates from a fallback result into the original result."""
+    if source.release_date:
+        target.release_date = source.release_date
+    if source.eol_date:
+        target.eol_date = source.eol_date
+    if source.eos_date and not target.eos_date:
+        target.eos_date = source.eos_date
+    target.date_source = source.date_source
+    if target.notes:
+        target.notes = f"{target.notes}; {note}"
+    else:
+        target.notes = note
 
 
 # ------------------------------------------------------------------
